@@ -1,0 +1,139 @@
+@using Nexus.Web.Components.Shared
+@inherits LayoutComponentBase
+@inject NavigationManager Navigation
+
+<div class="nexus-shell">
+    @if (!IsAuthPage)
+    {
+        <div id="main-wrapper" class="freedash-wrapper @(IsSidebarOpen ? "show-sidebar" : null)" data-theme="light" data-layout="vertical" data-navbarbg="skin6" data-sidebartype="full" data-sidebar-position="fixed" data-header-position="fixed" data-boxed-layout="full">
+            <header class="topbar" data-navbarbg="skin6">
+                <nav class="top-navbar" aria-label="Top navigation">
+                    <div class="navbar-header" data-logobg="skin6">
+                        <button type="button" class="nav-toggler d-lg-none" aria-label="Toggle sidebar" @onclick="ToggleSidebar">
+                            <LucideIcon Name="menu" CssClass="lucide-icon" StrokeWidth="2.2" />
+                        </button>
+                        <a class="navbar-brand" href="/">
+                            <span class="layout-brand-mark" aria-hidden="true">
+                                <LucideIcon Name="plug" CssClass="lucide-icon" StrokeWidth="2.1" />
+                            </span>
+                            <span class="layout-brand-copy">
+                                <strong>Nexus</strong>
+                            </span>
+                        </a>
+                    </div>
+
+                    <div class="navbar-collapse">
+                        <div class="topbar-search" role="search">
+                            <input type="search" placeholder="Search tasks, projects, connectors" aria-label="Search" />
+                            <LucideIcon Name="search" CssClass="lucide-icon" />
+                        </div>
+
+                        <div class="topbar-actions">
+                            <a class="topbar-icon-button" href="/tasks" aria-label="Tasks">
+                                <LucideIcon Name="list-todo" CssClass="lucide-icon" />
+                            </a>
+                            <a class="topbar-icon-button" href="/settings" aria-label="Settings">
+                                <LucideIcon Name="settings" CssClass="lucide-icon" />
+                            </a>
+                            <span class="topbar-profile" aria-label="Current workspace">
+                                <span class="profile-avatar" aria-hidden="true">N</span>
+                                <span class="profile-copy">
+                                    <span>Hello,</span>
+                                    <strong>Nexus</strong>
+                                </span>
+                            </span>
+                        </div>
+                    </div>
+                </nav>
+            </header>
+
+            <aside class="left-sidebar" data-sidebarbg="skin6">
+                <div class="scroll-sidebar" data-sidebarbg="skin6">
+                    <NavMenu />
+                </div>
+            </aside>
+
+            @if (IsSidebarOpen)
+            {
+                <button type="button" class="sidebar-backdrop" aria-label="Close sidebar" @onclick="CloseSidebar"></button>
+            }
+
+            <div class="page-wrapper">
+                <div class="page-breadcrumb">
+                    <div>
+                        <h1 class="page-title">@PageTitle</h1>
+                        <FluentBreadcrumb>
+                            <FluentBreadcrumbItem Href="/">Dashboard</FluentBreadcrumbItem>
+                            @if (Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("tasks/", StringComparison.OrdinalIgnoreCase))
+                            {
+                                <FluentBreadcrumbItem Href="/tasks">Tasks</FluentBreadcrumbItem>
+                                <SectionOutlet SectionName="task-title" />
+                            }
+                            else if (!string.IsNullOrEmpty(Navigation.ToBaseRelativePath(Navigation.Uri)))
+                            {
+                                <FluentBreadcrumbItem>@PageTitle</FluentBreadcrumbItem>
+                            }
+                        </FluentBreadcrumb>
+                    </div>
+                    <div class="breadcrumb-action">
+                        <span>@DateTime.Now.ToString("MMM dd")</span>
+                    </div>
+                </div>
+
+                <main class="container-fluid">
+                    @Body
+                </main>
+            </div>
+        </div>
+    }
+    else
+    {
+        <main class="layout-body-shell layout-body-shell-unlock">
+            @Body
+        </main>
+    }
+
+    <FluentToastProvider Position="ToastPosition.TopCenter" />
+    <FluentDialogProvider />
+    <FluentTooltipProvider />
+    <FluentMessageBarProvider />
+    <FluentMenuProvider />
+</div>
+
+@code {
+    private bool IsSidebarOpen { get; set; }
+
+    private bool IsAuthPage
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri);
+            return path.StartsWith("login", StringComparison.OrdinalIgnoreCase)
+                || path.StartsWith("unlock", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private string PageTitle
+    {
+        get
+        {
+            var path = Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/').Split('?', '#')[0];
+
+            return path switch
+            {
+                "" => "Dashboard",
+                "tasks" => "Tasks",
+                var value when value.StartsWith("tasks/", StringComparison.OrdinalIgnoreCase) => "Task Detail",
+                "projects" => "Projects",
+                "connectors" => "Connectors",
+                "settings" => "Settings",
+                var value when value.StartsWith("settings/", StringComparison.OrdinalIgnoreCase) => "Settings",
+                _ => "Dashboard"
+            };
+        }
+    }
+
+    private void ToggleSidebar() => IsSidebarOpen = !IsSidebarOpen;
+
+    private void CloseSidebar() => IsSidebarOpen = false;
+}

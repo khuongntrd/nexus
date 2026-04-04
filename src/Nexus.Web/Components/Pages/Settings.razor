@@ -1,0 +1,370 @@
+@page "/settings"
+@using Nexus.Application.Options
+@using Nexus.Application.Connectors
+@using Nexus.Connectors.Core.Abstractions
+@using Nexus.Connectors.Core.Exceptions
+@using System.Linq
+@using Nexus.Core.Entities
+@using Nexus.Core.Enums
+@using Nexus.Application.Repositories
+@inject IIntegrationRepository IntegrationRepository
+@inject ISyncCheckpointRepository SyncCheckpointRepository
+@inject ITaskRepository TaskRepository
+@inject IConnectorRegistry ConnectorRegistry
+@inject IConnectorPluginCatalog ConnectorPluginCatalog
+@inject IConnectorSettingsStore ConnectorSettingsStore
+@inject ITokenStore TokenStore
+@inject NavigationManager Navigation
+@inject IToastService ToastService
+@inject IDialogService DialogService
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Nexus.Web.Components.Connectors
+
+<PageTitle>Settings - Nexus</PageTitle>
+
+<FluentGrid Spacing="3" AdaptiveRendering="true">
+    <FluentGridItem xs="12">
+        <FluentCard>
+            <div class="surface-card-header">
+                <h3>Your Connections</h3>
+                <FluentButton Appearance="@Appearance.Accent" @onclick="AddNewConnection">
+                    <span class="button-with-icon">
+                        <LucideIcon Name="plus" CssClass="button-icon" />
+                        <span>Add Connection</span>
+                    </span>
+                </FluentButton>
+            </div>
+            <div class="settings-connections-list">
+                @if (Connections.Count == 0)
+                {
+                    <div class="settings-connections-empty">
+                        <p>No connections configured yet. Add your first connector to start syncing tasks.</p>
+                    </div>
+                }
+                else
+                {
+                    <div class="settings-connections-rows">
+                        @foreach (var connection in Connections)
+                        {
+                            <div class="settings-connection-row">
+                                <div class="settings-connection-main">
+                                    <div class="settings-connection-icon" aria-hidden="true">@GetServiceGlyph(connection.ServiceType)</div>
+                                    <div class="settings-connection-copy">
+                                        <h4>@connection.Name</h4>
+                                        <p class="settings-connection-type">@GetServiceLabel(connection.ServiceType)</p>
+                                        <div class="settings-connection-status">
+                                            <span class="connector-badge @(connection.IsEnabled ? "connector-badge-subtle" : "connector-badge-alert")">
+                                                @(connection.IsEnabled ? "Enabled" : "Disabled")
+                                            </span>
+                                            <span class="connector-badge @(connection.IsReady ? "connector-badge-subtle" : "connector-badge-alert")">
+                                                @(connection.IsReady ? "Ready" : "Not ready")
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="settings-connection-actions">
+                                    <FluentButton Appearance="@Appearance.Accent" Size="Size.Small"
+                                                  @onclick="() => EditConnection(connection.Id)">
+                                        <span class="button-with-icon">
+                                            <LucideIcon Name="settings-2" CssClass="button-icon" />
+                                            <span>Edit</span>
+                                        </span>
+                                    </FluentButton>
+
+                                    <FluentButton Appearance="@Appearance.Outline" Size="Size.Small"
+                                                  Disabled="@(!connection.IsEnabled || !connection.IsReady)"
+                                                  @onclick="() => SyncNow(connection.Id)">
+                                        <span class="button-with-icon">
+                                            <LucideIcon Name="refresh-cw" CssClass="button-icon" />
+                                            <span>Sync</span>
+                                        </span>
+                                    </FluentButton>
+
+                                    <FluentButton Appearance="@Appearance.Outline" Size="Size.Small"
+                                                  @onclick="() => ToggleConnection(connection.Id)">
+                                        <span class="button-with-icon">
+                                            <LucideIcon Name="@(connection.IsEnabled ? "power-off" : "power")" CssClass="button-icon" />
+                                            <span>@(connection.IsEnabled ? "Disable" : "Enable")</span>
+                                        </span>
+                                    </FluentButton>
+
+                                    @if (ShouldOfferOAuthConnect(connection))
+                                    {
+                                        <FluentButton Appearance="@Appearance.Outline" Size="Size.Small"
+                                                      @onclick="() => GoToConnectorOAuth(connection.Id, connection.ServiceType)">
+                                            <span class="button-with-icon">
+                                                <LucideIcon Name="key" CssClass="button-icon" />
+                                                <span>Connect OAuth</span>
+                                            </span>
+                                        </FluentButton>
+                                    }
+
+                                    <FluentButton Appearance="@Appearance.Outline" Size="Size.Small"
+                                                  @onclick="() => DeleteConnection(connection.Id)">
+                                        <span class="button-with-icon">
+                                            <LucideIcon Name="trash-2" CssClass="button-icon" />
+                                            <span>Delete</span>
+                                        </span>
+                                    </FluentButton>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                }
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+</FluentGrid>
+
+@code {
+    private List<ConnectionItem> Connections = new();
+
+    private int ReadyCount =>
+        Connections.Count(c => c.IsReady);
+
+    private int TotalIntegrationCount => Connections.Count;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConnectionsAsync();
+    }
+
+    private async Task LoadConnectionsAsync()
+    {
+        Connections.Clear();
+
+        foreach (var connector in ConnectorRegistry.GetAll())
+        {
+            foreach (var integration in await IntegrationRepository.GetByServiceTypeAsync(connector.ServiceType))
+            {
+                var surface = await connector.DescribeConnectionAsync(integration, ConnectorSettingsStore, TokenStore);
+                Connections.Add(new ConnectionItem
+                {
+                    Id = integration.Id,
+                    Name = integration.DisplayName,
+                    ServiceType = integration.ServiceType,
+                    AuthMode = integration.AuthMode,
+                    IsEnabled = integration.IsEnabled,
+                    HasToken = surface.HasCredential,
+                    IsReady = integration.IsEnabled && surface.IsConfigurationComplete,
+                    Settings = surface.Settings,
+                });
+            }
+        }
+    }
+
+    private async Task AddNewConnection()
+    {
+        await ShowConnectionDialogAsync(null);
+    }
+
+    private async Task EditConnection(Guid id)
+    {
+        await ShowConnectionDialogAsync(id);
+    }
+
+    private async Task ShowConnectionDialogAsync(Guid? connectionId)
+    {
+        var model = new ConnectionDialogModel { ConnectionId = connectionId };
+        var dialog = await DialogService.ShowDialogAsync<ConnectionDialog>(
+            model,
+            new DialogParameters
+            {
+                Title = model.Title,
+                PrimaryAction = "Save",
+                SecondaryAction = "Cancel",
+                Width = "620px",
+                Modal = true,
+                PreventScroll = true,
+                PreventDismissOnOverlayClick = true,
+                ValidateDialogAsync = model.SaveIfReadyAsync
+            });
+
+        var result = await dialog.Result;
+        if (!result.Cancelled && model.IsSaved)
+        {
+            await LoadConnectionsAsync();
+            ToastService.ShowSuccess("Connection saved.");
+        }
+    }
+
+    private async Task ToggleConnection(Guid id)
+    {
+        var connection = Connections.FirstOrDefault(c => c.Id == id);
+        if (connection != null)
+        {
+            var integration = await IntegrationRepository.GetByIdAsync(id);
+            if (integration != null)
+            {
+                integration.SetEnabled(!integration.IsEnabled);
+                await IntegrationRepository.UpdateAsync(integration);
+                await LoadConnectionsAsync();
+                
+                ToastService.ShowSuccess($"{(integration.IsEnabled ? "Enabled" : "Disabled")} {connection.Name}");
+            }
+        }
+    }
+
+    private async Task SyncNow(Guid id)
+    {
+        var connection = Connections.FirstOrDefault(c => c.Id == id);
+        if (connection != null)
+        {
+            try
+            {
+                var connector = ConnectorRegistry.Get(connection.ServiceType);
+                var integration = await IntegrationRepository.GetByIdAsync(id);
+                if (connector is null || integration is null)
+                {
+                    ToastService.ShowError("Connector service is not available.");
+                    return;
+                }
+
+                if (!integration.IsEnabled)
+                {
+                    ToastService.ShowWarning($"{connection.Name} is disabled.");
+                    return;
+                }
+
+                var checkpoint = await SyncCheckpointRepository.GetByServiceTypeAsync(connection.ServiceType);
+                var defaultLookbackDays = ConnectorPluginCatalog.Get(connection.ServiceType)?.SyncProfile.DefaultLookbackDays ?? 30;
+                var since = integration.LastSyncAt
+                    ?? (checkpoint is null ? DateTimeOffset.UtcNow.AddDays(-defaultLookbackDays) : DateTimeOffset.TryParse(checkpoint.Cursor, out var parsed) ? parsed : DateTimeOffset.UtcNow.AddDays(-defaultLookbackDays));
+                var coreIntegration = new Nexus.Core.Entities.Integration(
+                    integration.ServiceType,
+                    integration.DisplayName,
+                    integration.AuthMode,
+                    integration.IsEnabled,
+                    integration.Id);
+                coreIntegration.SetConfigJson(integration.ConfigJson);
+                coreIntegration.SetTokenJson(integration.TokenJson);
+                var items = await connector.FetchItemsAsync(coreIntegration, since);
+                await UpsertTasksAsync(connector, integration, items);
+                integration.RecordSync();
+                await IntegrationRepository.UpdateAsync(integration);
+                await LoadConnectionsAsync();
+
+                ToastService.ShowSuccess($"Synced {items.Count} items from {connection.Name}.");
+            }
+            catch (ReconnectRequiredException)
+            {
+                Navigation.NavigateTo($"/connectors/auth/{connection.ServiceType}?integrationId={id}", forceLoad: true);
+            }
+            catch (Exception ex)
+            {
+                ToastService.ShowError(ex.Message);
+            }
+        }
+    }
+
+    private void GoToConnectorOAuth(Guid id, ServiceType serviceType)
+        => Navigation.NavigateTo($"/connectors/auth/{serviceType}?integrationId={id}", forceLoad: true);
+
+    private async Task DeleteConnection(Guid id)
+    {
+        var connection = Connections.FirstOrDefault(c => c.Id == id);
+        if (connection != null)
+        {
+            // Delete the integration
+            await IntegrationRepository.DeleteAsync(id);
+            await LoadConnectionsAsync();
+            
+            ToastService.ShowSuccess($"Deleted {connection.Name}");
+        }
+    }
+
+    private class ConnectionItem
+    {
+        public Guid Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public ServiceType ServiceType { get; set; }
+        public AuthMode AuthMode { get; set; } = AuthMode.OAuthPkce;
+        public bool IsEnabled { get; set; }
+        public bool HasToken { get; set; }
+        public bool IsReady { get; set; }
+        public object Settings { get; set; } = default!;
+    }
+
+    private string GetServiceLabel(ServiceType serviceType)
+        => ConnectorPluginCatalog.Get(serviceType)?.DisplayName ?? serviceType.ToString();
+
+    private string GetServiceGlyph(ServiceType serviceType)
+    {
+        var label = ConnectorPluginCatalog.Get(serviceType)?.DisplayName;
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            return "?";
+        }
+
+        label = label.Trim();
+        return char.ToUpperInvariant(label[0]).ToString();
+    }
+
+    private bool ShouldOfferOAuthConnect(ConnectionItem connection)
+    {
+        var manifest = ConnectorPluginCatalog.Get(connection.ServiceType);
+        if (manifest is null || !manifest.SupportedAuthModes.Contains(AuthMode.OAuthPkce) || connection.HasToken)
+        {
+            return false;
+        }
+
+        var oauthOnly = manifest.SupportedAuthModes.Count == 1;
+        return connection.AuthMode == AuthMode.OAuthPkce || oauthOnly;
+    }
+
+    private async Task UpsertTasksAsync(IServiceConnector connector, Integration integration, IReadOnlyList<Nexus.Core.Entities.ServiceItem> items)
+    {
+        var syncedAt = DateTimeOffset.UtcNow;
+        foreach (var item in items)
+        {
+            var mappedTask = connector.MapToUnifiedTask(item, integrationId: integration.Id);
+            var existing = await TaskRepository.GetByExternalRefAsync(integration.ServiceType, item.ExternalId, integration.Id);
+
+            if (existing is null)
+            {
+                var newTask = new UnifiedTask(
+                    mappedTask.Title,
+                    mappedTask.Description,
+                    mappedTask.Status,
+                    mappedTask.Priority,
+                    mappedTask.SyncFromSource,
+                    mappedTask.DueAt,
+                    mappedTask.ExternalRef is null ? null : new Nexus.Core.ValueObjects.ExternalRef(
+                        mappedTask.ExternalRef.ServiceType,
+                        mappedTask.ExternalRef.ExternalId,
+                        mappedTask.ExternalRef.Url,
+                        mappedTask.ExternalRef.ProjectKey,
+                        mappedTask.ExternalRef.IntegrationId),
+                    mappedTask.CreatedAt,
+                    mappedTask.ProjectId);
+                newTask.MarkSynced(syncedAt);
+                await TaskRepository.AddAsync(newTask);
+            }
+            else
+            {
+                existing.Update(
+                    title: mappedTask.Title,
+                    description: mappedTask.Description,
+                    status: mappedTask.Status,
+                    dueAt: mappedTask.DueAt,
+                    createdAt: mappedTask.CreatedAt);
+                if (mappedTask.Priority is not null)
+                {
+                    existing.SetPriority(mappedTask.Priority.Value);
+                }
+                if (mappedTask.ExternalRef is not null)
+                {
+                    existing.SetExternalRef(new Nexus.Core.ValueObjects.ExternalRef(
+                        mappedTask.ExternalRef.ServiceType,
+                        mappedTask.ExternalRef.ExternalId,
+                        mappedTask.ExternalRef.Url,
+                        mappedTask.ExternalRef.ProjectKey,
+                        mappedTask.ExternalRef.IntegrationId));
+                }
+                existing.MarkSynced(syncedAt);
+                await TaskRepository.UpdateAsync(existing);
+            }
+        }
+    }
+}

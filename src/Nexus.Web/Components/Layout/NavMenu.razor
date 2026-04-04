@@ -1,0 +1,41 @@
+﻿@using Nexus.Web.Components.Shared
+
+<nav class="sidebar-nav" aria-label="Main navigation">
+    <ul id="sidebarnav">
+        <li class="nav-small-cap"><span class="hide-menu">Workspace</span></li>
+        <li class="sidebar-item">
+            <NavLink href="/" Match="NavLinkMatch.All" class="sidebar-link">
+                <span class="nav-icon" aria-hidden="true">
+                    <LucideIcon Name="house" CssClass="feather-icon" />
+                </span>
+                <span class="hide-menu">Dashboard</span>
+            </NavLink>
+        </li>
+        <li class="sidebar-item">
+            <NavLink href="/tasks" class="sidebar-link">
+                <span class="nav-icon" aria-hidden="true">
+                    <LucideIcon Name="list-todo" CssClass="feather-icon" />
+                </span>
+                <span class="hide-menu">Tasks</span>
+            </NavLink>
+        </li>
+        <li class="sidebar-item">
+            <NavLink href="/projects" class="sidebar-link">
+                <span class="nav-icon" aria-hidden="true">
+                    <LucideIcon Name="folders" CssClass="feather-icon" />
+                </span>
+                <span class="hide-menu">Projects</span>
+            </NavLink>
+        </li>
+        <li class="list-divider"></li>
+        <li class="nav-small-cap"><span class="hide-menu">Integrations</span></li>
+        <li class="sidebar-item">
+            <NavLink href="/settings" class="sidebar-link">
+                <span class="nav-icon" aria-hidden="true">
+                    <LucideIcon Name="settings" CssClass="feather-icon" />
+                </span>
+                <span class="hide-menu">Settings</span>
+            </NavLink>
+        </li>
+    </ul>
+</nav>

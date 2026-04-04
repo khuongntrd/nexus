@@ -1,0 +1,17 @@
+@page "/connectors/auth/{serviceType}"
+
+<PageTitle>Connecting - Nexus</PageTitle>
+
+<FluentGrid Spacing="3" AdaptiveRendering="true">
+    <FluentGridItem xs="12" sm="8" md="6">
+        <FluentCard class="surface-card" style="max-width: 520px;">
+            <h2>Connector authorization</h2>
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <p class="muted">@_errorMessage</p>
+                <FluentButton Appearance="@Appearance.Outline" @onclick="GoToSettings">Back to Settings</FluentButton>
+            }
+        </FluentCard>
+    </FluentGridItem>
+</FluentGrid>

@@ -1,0 +1,28 @@
+<FluentCard class="surface-card dashboard-widget-card">
+    <div class="surface-card-header">
+        <div>
+            <h3>Sync health</h3>
+        </div>
+        <span class="status-pill @(IsHealthy ? "status-done" : "status-open")">
+            @(IsHealthy ? "Active" : "Needs setup")
+        </span>
+    </div>
+
+    <div class="dashboard-mini-list">
+        @foreach (var item in Items)
+        {
+            <article class="dashboard-mini-item">
+                <div>
+                    <p class="task-title">@item.Title</p>
+                    <p class="muted">@item.Detail</p>
+                </div>
+                <span class="status-pill @item.StatusClass">@item.StatusLabel</span>
+            </article>
+        }
+    </div>
+</FluentCard>
+
+@code {
+    [Parameter] public bool IsHealthy { get; set; }
+    [Parameter] public IReadOnlyList<ConnectorHealthItem> Items { get; set; } = [];
+}

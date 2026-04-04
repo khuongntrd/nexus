@@ -1,0 +1,253 @@
+@using Microsoft.FluentUI.AspNetCore.Components
+@using Nexus.Connectors.Core.Abstractions
+@using Nexus.Core.Entities
+@using Nexus.Core.Enums
+@using Nexus.Application.Repositories
+@using Microsoft.AspNetCore.Components
+@using Nexus.Web.Components.Connectors
+@implements IDialogContentComponent<ConnectionDialogModel>
+@inject IIntegrationRepository IntegrationRepository
+@inject IConnectorPluginRegistry ConnectorPluginRegistry
+@inject IConnectorUiRegistry ConnectorUiRegistry
+
+<div class="connection-dialog-content">
+    @if (!Content.ConnectionId.HasValue)
+    {
+        <FluentSelect TOption="ConnectorUiDefinition"
+                      Label="Service"
+                      Items="@ConnectorUiRegistry.GetAll()"
+                      OptionText="@(d => d.DisplayName)"
+                      OptionValue="@(d => d.ServiceType.Value)"
+                      SelectedOption="@SelectedDefinition"
+                      SelectedOptionChanged="SelectConnectorAsync" />
+    }
+
+    @if (SelectedDefinition is not null && SelectedDefinition.ConfigComponentType is not null)
+    {
+        <DynamicComponent Type="SelectedDefinition.ConfigComponentType"
+                          Parameters="SelectedConfigParameters"
+                          @key="SelectedDefinition.UiConfig.GetComponentKey(SelectedSettings)" />
+    }
+    else if (SelectedDefinition is not null)
+    {
+        <p class="connector-status connector-status-disconnected">Connector UI config component is not registered.</p>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Content.ErrorMessage))
+    {
+        <p class="connector-status connector-status-disconnected">@Content.ErrorMessage</p>
+    }
+</div>
+
+@code {
+    [Parameter] public ConnectionDialogModel Content { get; set; } = default!;
+    private ConnectorUiDefinition? SelectedDefinition { get; set; }
+    private Dictionary<string, object> SelectedSettings { get; set; } = [];
+
+    private IDictionary<string, object> SelectedConfigParameters
+        => SelectedDefinition?.UiConfig.BuildComponentParameters(
+            SelectedSettings,
+            EventCallback.Factory.Create(this, OnSettingsChanged))
+           ?? new Dictionary<string, object>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Content.SaveAsync = HandleSaveAsync;
+        var availableConnectors = ConnectorUiRegistry.GetAll().ToList();
+        var initialDefinition = availableConnectors
+            .FirstOrDefault(d => d.ServiceType == Content.InitialServiceType)
+            ?? availableConnectors.FirstOrDefault();
+
+        if (Content.ConnectionId.HasValue)
+        {
+            await LoadConnectionAsync(Content.ConnectionId.Value);
+        }
+        else if (initialDefinition is not null)
+        {
+            await SelectConnectorAsync(initialDefinition);
+        }
+    }
+
+    private async Task SelectConnectorAsync(ConnectorUiDefinition definition)
+    {
+        SelectedDefinition = definition;
+        SelectedSettings = await definition.UiConfig.LoadSettingsAsync(new Integration(definition.ServiceType, "", AuthMode.OAuthPkce, false));
+        StateHasChanged();
+    }
+
+    private async Task LoadConnectionAsync(Guid id)
+    {
+        var integration = await IntegrationRepository.GetByIdAsync(id);
+        if (integration is null)
+        {
+            Content.ErrorMessage = "Connection was not found.";
+            return;
+        }
+
+        SelectedDefinition = ConnectorUiRegistry.Get(integration.ServiceType);
+        if (SelectedDefinition is null)
+        {
+            Content.ErrorMessage = "Connector UI definition is not registered.";
+            return;
+        }
+
+        var plugin = ConnectorPluginRegistry.Get(integration.ServiceType);
+        if (plugin is null)
+        {
+            Content.ErrorMessage = "Connector plugin is not registered.";
+            return;
+        }
+
+        var settingsType = SelectedDefinition.UiConfig.GetSettingsType();
+        var loadedSettings = await plugin.LoadSettingsAsync(integration, settingsType);
+
+        SelectedSettings = new Dictionary<string, object>();
+        if (loadedSettings is not null)
+        {
+            SelectedSettings["Settings"] = loadedSettings;
+        }
+        else
+        {
+            var defaultSettings = await SelectedDefinition.UiConfig.LoadSettingsAsync(integration);
+            SelectedSettings = defaultSettings;
+        }
+
+        // Restore display name and auth mode from integration
+        if (SelectedSettings.TryGetValue("Settings", out var settingsObj))
+        {
+            dynamic settings = settingsObj;
+            try
+            {
+                settings.DisplayName = integration.DisplayName;
+            }
+            catch { }
+
+            try
+            {
+                settings.AuthMode = integration.AuthMode;
+            }
+            catch { }
+        }
+    }
+
+    private void OnSettingsChanged()
+    {
+        StateHasChanged();
+    }
+
+    private async Task<bool> HandleSaveAsync()
+    {
+        Content.ErrorMessage = null;
+
+        try
+        {
+            if (SelectedDefinition is null)
+            {
+                Content.ErrorMessage = "No connector selected.";
+                StateHasChanged();
+                return false;
+            }
+
+            SelectedDefinition.UiConfig.NormalizeSettings(SelectedSettings);
+
+            var integration = Content.ConnectionId.HasValue
+                ? await IntegrationRepository.GetByIdAsync(Content.ConnectionId.Value)
+                : await CreateIntegrationAsync();
+
+            if (integration is null)
+            {
+                Content.ErrorMessage = "Connection was not found.";
+                StateHasChanged();
+                return false;
+            }
+
+            var displayName = SelectedDefinition.UiConfig.GetDisplayName(
+                SelectedSettings,
+                integration.DisplayName,
+                SelectedDefinition.DisplayName);
+
+            integration.Rename(displayName);
+
+            // Handle auth mode for connectors that support it
+            if (SelectedSettings.TryGetValue("Settings", out var settingsObj))
+            {
+                try
+                {
+                    dynamic settings = settingsObj;
+                    if (settings.AuthMode is Nexus.Core.Enums.AuthMode authMode)
+                    {
+                        integration.SetAuthMode(authMode);
+                    }
+                }
+                catch { }
+            }
+
+            var shouldBeEnabled = Content.ConnectionId.HasValue
+                ? integration.IsEnabled
+                : SelectedDefinition.UiConfig.IsConfigured(SelectedSettings, integration.TokenJson);
+
+            await IntegrationRepository.UpdateAsync(integration);
+
+            var plugin = ConnectorPluginRegistry.Get(SelectedDefinition.ServiceType);
+            if (plugin is null)
+            {
+                throw new InvalidOperationException("Connector plugin is not registered.");
+            }
+
+            var settingsToSave = SelectedSettings.TryGetValue("Settings", out var obj) ? obj : new { };
+            await plugin.SaveSettingsAsync(integration, settingsToSave);
+
+            integration = await IntegrationRepository.GetByIdAsync(integration.Id);
+            integration?.SetEnabled(shouldBeEnabled);
+            if (integration is not null)
+            {
+                await IntegrationRepository.UpdateAsync(integration);
+            }
+
+            Content.IsSaved = true;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Content.ErrorMessage = ex.Message;
+            StateHasChanged();
+            return false;
+        }
+    }
+
+    private async Task<Integration> CreateIntegrationAsync()
+    {
+        if (SelectedDefinition is null)
+        {
+            return null!;
+        }
+
+        var authMode = AuthMode.OAuthPkce;
+        if (SelectedSettings.TryGetValue("Settings", out var settingsObj))
+        {
+            try
+            {
+                dynamic settings = settingsObj;
+                if (settings.AuthMode is Nexus.Core.Enums.AuthMode mode)
+                {
+                    authMode = mode;
+                }
+            }
+            catch { }
+        }
+
+        var displayName = SelectedDefinition.UiConfig.GetDisplayName(
+            SelectedSettings,
+            null,
+            SelectedDefinition.DisplayName);
+
+        var integration = new Integration(
+            SelectedDefinition.ServiceType,
+            displayName,
+            authMode,
+            isEnabled: false);
+
+        await IntegrationRepository.AddAsync(integration);
+        return integration;
+    }
+}

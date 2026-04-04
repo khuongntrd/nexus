@@ -1,0 +1,895 @@
+@page "/tasks/{TaskId:guid}"
+@using System.Net
+@using System.Text
+@using System.Text.RegularExpressions
+@using Microsoft.Extensions.Options
+@using Nexus.Application.Connectors
+@using Nexus.Application.Options
+@using Nexus.Connectors.Core.Abstractions
+@using Nexus.Connectors.Core.Models
+@using Nexus.Connectors.Core.Exceptions
+@using Nexus.Core.Entities
+@using Nexus.Core.Enums
+@using Nexus.Application.Repositories
+@inject ITaskRepository TaskRepository
+@inject IIntegrationRepository IntegrationRepository
+@inject IConnectorRegistry ConnectorRegistry
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@inject IOptions<SyncOptions> SyncOptionsAccessor
+@inject IToastService ToastService
+@inject IConnectorPluginCatalog ConnectorPluginCatalog
+@using TaskStatusEnum = Nexus.Core.Enums.TaskStatus
+@using TaskPriorityEnum = Nexus.Core.Enums.TaskPriority
+
+<PageTitle>Task Detail - Nexus</PageTitle>
+
+@if (_task is not null)
+{
+    <SectionContent SectionName="task-title">
+        <FluentBreadcrumbItem>@_task.Title</FluentBreadcrumbItem>
+    </SectionContent>
+}
+
+<FluentGrid Spacing="3" AdaptiveRendering="true">
+    <FluentGridItem xs="12">
+        <FluentCard class="surface-card task-detail-hero">
+            @if (_loading)
+            {
+                <p class="muted">Loading task...</p>
+            }
+            else if (_task is null)
+            {
+                <div class="empty-state">
+                    <h3>Task not found</h3>
+                    <p class="muted">The requested task may have been removed or was never synced into the local store.</p>
+                    <div class="row-actions">
+                        <FluentButton Appearance="@Appearance.Outline" @onclick="BackToTasks">Back to Tasks</FluentButton>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="surface-card-header">
+                    <div>
+                        <div class="task-item-topline">
+                            <span class="status-pill @GetStatusClass(_task.Status)">@GetStatusLabel(_task)</span>
+                            <span class="connector-badge">@GetConnectorLabel(_task)</span>
+                            @if (!string.IsNullOrWhiteSpace(AccentBadge))
+                            {
+                                <span class="connector-badge connector-badge-subtle">@AccentBadge</span>
+                            }
+                        </div>
+                        <h2>@_task.Title</h2>
+                    </div>
+
+                    <div class="row-actions task-detail-hero-actions">
+                        <FluentButton Appearance="@Appearance.Outline" Disabled="@(!_canSync || _syncing)"
+                                      @onclick="PullTaskAsync">
+                            <span class="button-with-icon">
+                                <LucideIcon Name="refresh-cw" CssClass="button-icon" />
+                                <span>@(_syncing ? "Syncing..." : "Pull latest")</span>
+                            </span>
+                        </FluentButton>
+                        @if (!string.IsNullOrWhiteSpace(SourceUrl))
+                        {
+                            <FluentButton Appearance="@Appearance.Outline" @onclick="OpenSourceUrl">
+                                <span class="button-with-icon">
+                                    <LucideIcon Name="external-link" CssClass="button-icon" />
+                                    <span>Open Source</span>
+                                </span>
+                            </FluentButton>
+                        }
+                    </div>
+                </div>
+
+                <div class="task-detail-meta-strip">
+                    <div class="task-detail-meta-chip">
+                        <span class="task-detail-meta-label">Created</span>
+                        <strong>@_task.CreatedAt.ToLocalTime().ToString("ddd, MMM d · h:mm tt")</strong>
+                    </div>
+                    <div class="task-detail-meta-chip">
+                        <span class="task-detail-meta-label">Updated</span>
+                        <strong>@_task.UpdatedAt.ToLocalTime().ToString("ddd, MMM d · h:mm tt")</strong>
+                    </div>
+                    <div class="task-detail-meta-chip">
+                        <span class="task-detail-meta-label">Due</span>
+                        <strong>@FormatDue(_task.DueAt)</strong>
+                    </div>
+                    <div class="task-detail-meta-chip">
+                        <span class="task-detail-meta-label">Priority</span>
+                        <span class="@GetPriorityClass(_task.Priority)">@GetPriorityLabel(_task.Priority)</span>
+                    </div>
+                    <div class="task-detail-meta-chip">
+                        <span class="task-detail-meta-label">Sync</span>
+                        <strong>@LastSyncSummary</strong>
+                    </div>
+                </div>
+            }
+        </FluentCard>
+    </FluentGridItem>
+
+    @if (!_loading && _task is not null)
+    {
+        <FluentGridItem xs="12" lg="8">
+            <FluentCard class="surface-card task-editor-card">
+                <div class="surface-card-header">
+                    <h3>Task content</h3>
+                </div>
+
+                <div class="task-detail-form">
+                    <section class="task-content-view">
+                        <div class="task-markdown">
+                            @RenderMarkdown(_task.Description)
+                        </div>
+                    </section>
+                </div>
+            </FluentCard>
+        </FluentGridItem>
+
+        <FluentGridItem xs="12" lg="4">
+            <FluentGrid Spacing="3" AdaptiveRendering="true">
+                <FluentGridItem xs="12">
+                    <FluentCard class="surface-card task-sidebar-card">
+                        <h3>Actions</h3>
+                        <div class="task-detail-stack">
+                            <label class="task-detail-field">
+                                <span class="task-detail-meta-label">Status</span>
+                                <select class="task-detail-select" @bind="_statusString">
+                                    <option value="@TaskStatusEnum.Open.ToString()">Planned</option>
+                                    <option value="@TaskStatusEnum.InProgress.ToString()">Todo</option>
+                                    <option value="@TaskStatusEnum.Done.ToString()">Done</option>
+                                    <option value="@TaskStatusEnum.Blocked.ToString()">Blocked</option>
+                                    <option value="@TaskStatusEnum.Cancelled.ToString()">Cancelled</option>
+                                </select>
+                            </label>
+                            <div class="task-action-stack">
+                                <FluentButton Appearance="@Appearance.Accent" Disabled="@_saving" @onclick="SaveAsync">
+                                    <span class="button-with-icon">
+                                        <LucideIcon Name="save" CssClass="button-icon" />
+                                        <span>@(_saving ? "Saving..." : CanPushRemote ? "Push changes" : "Save changes")</span>
+                                    </span>
+                                </FluentButton>
+                                <FluentButton Appearance="@Appearance.Outline" Disabled="@(!_canSync || _syncing)"
+                                              @onclick="PullTaskAsync">
+                                    <span class="button-with-icon">
+                                        <LucideIcon Name="refresh-cw" CssClass="button-icon" />
+                                        <span>@(_syncing ? "Syncing..." : "Pull latest")</span>
+                                    </span>
+                                </FluentButton>
+                                @if (!string.IsNullOrWhiteSpace(SourceUrl))
+                                {
+                                    <FluentButton Appearance="@Appearance.Outline" @onclick="OpenSourceUrl">
+                                        <span class="button-with-icon">
+                                            <LucideIcon Name="external-link" CssClass="button-icon" />
+                                            <span>Open source</span>
+                                        </span>
+                                    </FluentButton>
+                                }
+                                @if (CanCloseRemote)
+                                {
+                                    <FluentButton Appearance="@Appearance.Outline" Disabled="@_closing" @onclick="CloseTaskAsync">
+                                        <span class="button-with-icon">
+                                            <LucideIcon Name="circle-check" CssClass="button-icon" />
+                                            <span>@(_closing ? "Closing..." : "Close on source")</span>
+                                        </span>
+                                    </FluentButton>
+                                }
+                            </div>
+                        </div>
+                    </FluentCard>
+                </FluentGridItem>
+
+                <FluentGridItem xs="12">
+                    <FluentCard class="surface-card task-sidebar-card">
+                        <h3>Connection state</h3>
+                        <div class="task-detail-stack">
+                            <div class="task-detail-panel">
+                                <span class="task-detail-meta-label">Connector</span>
+                                <strong>@GetConnectorLabel(_task)</strong>
+                            </div>
+                            <div class="task-detail-panel">
+                                <span class="task-detail-meta-label">External id</span>
+                                <strong class="task-inline-wrap">@(_task.ExternalRef?.ExternalId ?? "Local only")</strong>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(_task.ExternalRef?.ProjectKey))
+                            {
+                                <div class="task-detail-panel">
+                                    <span class="task-detail-meta-label">Project / repo</span>
+                                    <strong>@_task.ExternalRef.ProjectKey</strong>
+                                </div>
+                            }
+                        </div>
+                    </FluentCard>
+                </FluentGridItem>
+
+            </FluentGrid>
+        </FluentGridItem>
+    }
+</FluentGrid>
+
+@code {
+    [Parameter]
+    public Guid TaskId { get; set; }
+
+    private UnifiedTask? _task;
+    private bool _loading = true;
+    private bool _saving;
+    private bool _syncing;
+    private bool _closing;
+    private bool _canSync;
+    private string _statusString = TaskStatusEnum.Open.ToString();
+
+    private string? SourceUrl => BuildSourceUrl(_task);
+    private ServiceType? RemoteServiceType => _task?.ExternalRef?.ServiceType;
+    private bool CanPushRemote => RemoteServiceType is ServiceType st
+        && ConnectorRegistry.Get(st)?.SupportsRemoteTaskMutation == true;
+    private bool CanCloseRemote => CanPushRemote && _task?.ExternalRef is not null && _task.Status != TaskStatusEnum.Done;
+    private string LastSyncSummary => _task?.LastSyncAt is null
+        ? "Never synced"
+        : _task.LastSyncAt.Value.ToLocalTime().ToString("ddd, MMM d · h:mm tt");
+    private string AccentBadge => _task?.ExternalRef is not { } r
+        ? string.Empty
+        : ConnectorRegistry.Get(r.ServiceType)?.GetListAccentBadge(r) ?? string.Empty;
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadTaskAsync();
+    }
+
+    private async Task LoadTaskAsync()
+    {
+        _loading = true;
+
+        _task = await TaskRepository.GetByIdAsync(TaskId);
+        if (_task is null)
+        {
+            _loading = false;
+            return;
+        }
+
+        HydrateEditorState(_task);
+        await RefreshSyncAvailabilityAsync();
+
+        _loading = false;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_task is null)
+        {
+            return;
+        }
+
+        _saving = true;
+
+        try
+        {
+            var selectedStatus = ParseStatus(_statusString);
+
+            if (CanPushRemote && _task.ExternalRef is not null && RemoteServiceType is ServiceType serviceType)
+            {
+                var connector = ConnectorRegistry.Get(serviceType);
+                if (connector is null)
+                {
+                    ToastService.ShowToast(ToastIntent.Error, $"{GetConnectorLabel(_task)} connector is not available.");
+                    return;
+                }
+
+                var updatedItem = await connector.UpdateItemAsync(
+                    new Nexus.Core.Entities.Integration(
+                        serviceType,
+                        connector.DisplayName,
+                        AuthMode.PersonalAccessToken,
+                        true,
+                        _task.ExternalRef.IntegrationId),
+                    _task.ExternalRef.ExternalId,
+                    status: selectedStatus,
+                    title: _task.Title,
+                    description: _task.Description);
+
+                await ApplyMappedTaskAsync(connector.MapToUnifiedTask(updatedItem));
+                _task.SetSyncFromSource(true);
+                await TaskRepository.UpdateAsync(_task);
+                HydrateEditorState(_task);
+                ToastService.ShowToast(ToastIntent.Success, $"{GetConnectorLabel(_task)} item updated.");
+            }
+            else
+            {
+                _task.Update(
+                    status: selectedStatus,
+                    dueAt: _task.DueAt);
+                _task.SetSyncFromSource(true);
+
+                await TaskRepository.UpdateAsync(_task);
+                HydrateEditorState(_task);
+                ToastService.ShowToast(ToastIntent.Success, "Task updated.");
+            }
+
+            await RefreshSyncAvailabilityAsync();
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task CloseTaskAsync()
+    {
+        if (_task?.ExternalRef is null || !CanCloseRemote || RemoteServiceType is not ServiceType serviceType)
+        {
+            return;
+        }
+
+        _closing = true;
+        try
+        {
+            var connector = ConnectorRegistry.Get(serviceType);
+            if (connector is null)
+            {
+                ToastService.ShowToast(ToastIntent.Error, $"{GetConnectorLabel(_task)} connector is not available.");
+                return;
+            }
+
+            await connector.CloseItemAsync(
+                new Nexus.Core.Entities.Integration(
+                    serviceType,
+                    connector.DisplayName,
+                    AuthMode.PersonalAccessToken,
+                    true,
+                    _task.ExternalRef.IntegrationId),
+                _task.ExternalRef.ExternalId);
+
+            _task.Update(status: TaskStatusEnum.Done);
+            _task.MarkSynced();
+            await TaskRepository.UpdateAsync(_task);
+            HydrateEditorState(_task);
+            ToastService.ShowToast(ToastIntent.Success, $"{GetConnectorLabel(_task)} item closed.");
+        }
+        finally
+        {
+            _closing = false;
+        }
+    }
+
+    private async Task PullTaskAsync()
+    {
+        if (_task?.ExternalRef is null)
+        {
+            return;
+        }
+
+        _syncing = true;
+        try
+        {
+            var serviceType = _task.ExternalRef.ServiceType;
+            var integration = _task.ExternalRef.IntegrationId is null
+                ? null
+                : await IntegrationRepository.GetByIdAsync(_task.ExternalRef.IntegrationId.Value);
+
+            if (integration is null || !integration.IsEnabled)
+            {
+                ToastService.ShowToast(ToastIntent.Warning, "Connector is not connected. Reconnect first.");
+                return;
+            }
+
+            var connector = ConnectorRegistry.Get(serviceType);
+            if (connector is not null && connector.ShouldSkipAutoSyncFor(integration))
+            {
+                ToastService.ShowToast(ToastIntent.Warning, "Connector is not connected. Reconnect first.");
+                return;
+            }
+
+            if (connector is null)
+            {
+                ToastService.ShowToast(ToastIntent.Error, $"No connector registered for {serviceType}.");
+                return;
+            }
+
+            var matched = await FetchLatestItemAsync(connector, serviceType, integration, _task.ExternalRef.ExternalId);
+            if (matched is null)
+            {
+                if (ConnectorPluginCatalog.Get(serviceType)?.WhenSingleItemPullReturnsNullMarkLocalTaskDone == true)
+                {
+                    _task.Update(status: TaskStatusEnum.Done);
+                    _task.MarkSynced();
+                    await TaskRepository.UpdateAsync(_task);
+                    HydrateEditorState(_task);
+
+                    if (integration is not null)
+                    {
+                        integration.RecordSync();
+                        await IntegrationRepository.UpdateAsync(integration);
+                    }
+
+                    ToastService.ShowToast(ToastIntent.Info, "Jira ticket is no longer assigned to you or was not found. Marked local task as closed.");
+                    return;
+                }
+
+                ToastService.ShowToast(ToastIntent.Info, "No newer data found for this task.");
+                return;
+            }
+
+            await ApplyMappedTaskAsync(connector.MapToUnifiedTask(matched, integrationId: integration?.Id));
+
+            if (integration is not null)
+            {
+                integration.RecordSync();
+                await IntegrationRepository.UpdateAsync(integration);
+            }
+
+            ToastService.ShowToast(ToastIntent.Success, "Task synced from source.");
+        }
+        catch (ReconnectRequiredException ex) when (RemoteServiceType is not null && ex.ServiceType == RemoteServiceType.Value)
+        {
+            if (_task?.ExternalRef?.IntegrationId is Guid integrationId)
+            {
+                Navigation.NavigateTo($"/connectors/auth/{ex.ServiceType}?integrationId={integrationId}", forceLoad: true);
+            }
+            else
+            {
+                Navigation.NavigateTo("/settings", forceLoad: true);
+            }
+        }
+        finally
+        {
+            _syncing = false;
+        }
+    }
+
+    private async Task<Nexus.Core.Entities.ServiceItem?> FetchLatestItemAsync(IServiceConnector connector, ServiceType serviceType, Integration? integration, string externalId)
+    {
+        if (integration is null)
+        {
+            return null;
+        }
+
+        var lookbackDays = SyncOptionsAccessor.Value.DefaultLookbackDays;
+        var since = integration.LastSyncAt ?? DateTimeOffset.UtcNow.AddDays(-lookbackDays);
+        var coreIntegration = new Nexus.Core.Entities.Integration(
+            integration.ServiceType,
+            integration.DisplayName,
+            integration.AuthMode,
+            integration.IsEnabled,
+            integration.Id);
+        coreIntegration.SetConfigJson(integration.ConfigJson);
+        coreIntegration.SetTokenJson(integration.TokenJson);
+        return await connector.FetchItemByExternalIdAsync(coreIntegration, externalId, since);
+    }
+
+    private async Task ApplyMappedTaskAsync(Nexus.Core.Entities.UnifiedTask mapped)
+    {
+        if (_task is null)
+        {
+            return;
+        }
+
+        _task.Update(
+            title: mapped.Title,
+            description: mapped.Description,
+            status: mapped.Status,
+            dueAt: mapped.DueAt,
+            createdAt: mapped.CreatedAt);
+
+        if (mapped.Priority is not null)
+        {
+            _task.SetPriority((TaskPriorityEnum)mapped.Priority.Value);
+        }
+
+        if (mapped.ExternalRef is not null)
+        {
+            _task.SetExternalRef(new Nexus.Core.ValueObjects.ExternalRef(
+                (ServiceType)mapped.ExternalRef.ServiceType,
+                mapped.ExternalRef.ExternalId,
+                mapped.ExternalRef.Url,
+                mapped.ExternalRef.ProjectKey,
+                mapped.ExternalRef.IntegrationId));
+        }
+
+        _task.MarkSynced();
+
+        await TaskRepository.UpdateAsync(_task);
+        HydrateEditorState(_task);
+    }
+
+    private void HydrateEditorState(UnifiedTask task)
+    {
+        _statusString = task.Status.ToString();
+    }
+
+    private async Task RefreshSyncAvailabilityAsync()
+    {
+        if (_task?.ExternalRef is null)
+        {
+            _canSync = false;
+            return;
+        }
+
+        var serviceType = _task.ExternalRef.ServiceType;
+        var integration = _task.ExternalRef.IntegrationId is null
+            ? null
+            : await IntegrationRepository.GetByIdAsync(_task.ExternalRef.IntegrationId.Value);
+        _canSync = integration?.IsEnabled == true;
+    }
+
+    private void BackToTasks() => Navigation.NavigateTo("/tasks");
+
+    private async Task OpenSourceUrl()
+    {
+        if (!string.IsNullOrWhiteSpace(SourceUrl))
+        {
+            await JS.InvokeVoidAsync("open", SourceUrl, "_blank", "noopener,noreferrer");
+        }
+    }
+
+    private string GetConnectorLabel(UnifiedTask task)
+    {
+        if (task.ExternalRef is not { } r)
+        {
+            return "Local";
+        }
+
+        return ConnectorPluginCatalog.Get(r.ServiceType)?.DisplayName ?? "Local";
+    }
+
+    private string? BuildSourceUrl(UnifiedTask? task)
+    {
+        if (task?.ExternalRef is null)
+        {
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(task.ExternalRef.Url))
+        {
+            return task.ExternalRef.Url;
+        }
+
+        var fallback = ConnectorRegistry.Get(task.ExternalRef.ServiceType)?.BuildFallbackSourceUrl(task.ExternalRef.ExternalId);
+        if (!string.IsNullOrWhiteSpace(fallback))
+        {
+            return fallback;
+        }
+
+        return null;
+    }
+
+    private static MarkupString RenderMarkdown(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return (MarkupString)"<p class=\"muted\">No description</p>";
+        }
+
+        var normalized = NormalizeStructuredText(WebUtility.HtmlDecode(value)
+            .Replace("<br />", "\n", StringComparison.OrdinalIgnoreCase)
+            .Replace("<br/>", "\n", StringComparison.OrdinalIgnoreCase)
+            .Replace("<br>", "\n", StringComparison.OrdinalIgnoreCase)
+            .Replace("\r\n", "\n"));
+        var lines = normalized.Split('\n');
+        var html = new StringBuilder();
+        var paragraph = new List<string>();
+        var listItems = new List<string>();
+        var inCodeBlock = false;
+        var codeBlock = new StringBuilder();
+
+        foreach (var rawLine in lines)
+        {
+            var line = rawLine.TrimEnd();
+            var trimmed = line.Trim();
+
+            if (trimmed.StartsWith("```", StringComparison.Ordinal))
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+
+                if (inCodeBlock)
+                {
+                    html.Append("<pre><code>")
+                        .Append(WebUtility.HtmlEncode(codeBlock.ToString().TrimEnd('\n')))
+                        .Append("</code></pre>");
+                    codeBlock.Clear();
+                    inCodeBlock = false;
+                }
+                else
+                {
+                    inCodeBlock = true;
+                }
+
+                continue;
+            }
+
+            if (inCodeBlock)
+            {
+                codeBlock.AppendLine(rawLine);
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(trimmed))
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                continue;
+            }
+
+            if (trimmed.StartsWith("# ", StringComparison.Ordinal))
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                html.Append("<h1>")
+                    .Append(FormatInline(trimmed[2..]))
+                    .Append("</h1>");
+                continue;
+            }
+
+            if (trimmed.StartsWith("## ", StringComparison.Ordinal))
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                html.Append("<h2>")
+                    .Append(FormatInline(trimmed[3..]))
+                    .Append("</h2>");
+                continue;
+            }
+
+            if (trimmed.StartsWith("### ", StringComparison.Ordinal))
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                html.Append("<h3>")
+                    .Append(FormatInline(trimmed[4..]))
+                    .Append("</h3>");
+                continue;
+            }
+
+            if (IsSectionHeading(trimmed))
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                html.Append("<h2>")
+                    .Append(FormatInline(trimmed))
+                    .Append("</h2>");
+                continue;
+            }
+
+            if (Regex.IsMatch(trimmed, @"^\d+\.\s+", RegexOptions.CultureInvariant) && trimmed.Length <= 120)
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                html.Append("<h3>")
+                    .Append(FormatInline(trimmed))
+                    .Append("</h3>");
+                continue;
+            }
+
+            if (trimmed.StartsWith("- ", StringComparison.Ordinal) || trimmed.StartsWith("* ", StringComparison.Ordinal))
+            {
+                FlushParagraph(html, paragraph);
+                listItems.Add(trimmed[2..]);
+                continue;
+            }
+
+            if (trimmed.StartsWith("✔", StringComparison.Ordinal) || trimmed.StartsWith("✓", StringComparison.Ordinal))
+            {
+                FlushParagraph(html, paragraph);
+                listItems.Add(trimmed[1..].TrimStart());
+                continue;
+            }
+
+            if (trimmed.EndsWith(':') && trimmed.Length <= 80)
+            {
+                FlushParagraph(html, paragraph);
+                FlushList(html, listItems);
+                html.Append("<h3>")
+                    .Append(FormatInline(trimmed[..^1]))
+                    .Append("</h3>");
+                continue;
+            }
+
+            FlushList(html, listItems);
+            paragraph.Add(trimmed);
+        }
+
+        if (inCodeBlock)
+        {
+            html.Append("<pre><code>")
+                .Append(WebUtility.HtmlEncode(codeBlock.ToString().TrimEnd('\n')))
+                .Append("</code></pre>");
+        }
+
+        FlushParagraph(html, paragraph);
+        FlushList(html, listItems);
+
+        return new MarkupString(html.ToString());
+    }
+
+    private static string NormalizeStructuredText(string value)
+    {
+        var normalized = value.Replace("\r\n", "\n", StringComparison.Ordinal);
+        normalized = normalized
+            .Replace("DescriptionWe ", "Description\nWe ", StringComparison.Ordinal)
+            .Replace("Acceptance CriteriaShared Criteria", "Acceptance Criteria\nShared Criteria", StringComparison.Ordinal)
+            .Replace("Project-Specific Scope1. ", "Project-Specific Scope\n1. ", StringComparison.Ordinal)
+            .Replace("Out of ScopeAzure ", "Out of Scope\nAzure ", StringComparison.Ordinal)
+            .Replace("Success Metrics100%", "Success Metrics\n100%", StringComparison.Ordinal);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"(Description|Acceptance Criteria|Project-Specific Scope|Out of Scope|Success Metrics)(?=\n?[A-Z])",
+            "\n\n$1\n",
+            RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"(Shared Criteria\s*\([^)]+\)|Definition of Done)(?=\n?[A-Z0-9])",
+            "\n\n$1\n",
+            RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"(\d+\.\s+[A-Z][^\n]+?Projects?)(The\s+\.claude\/ folder must contain:)",
+            "$1\n$2",
+            RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"(\(C#\s*\/\s*\.NET\))(The\s+\.claude\/ folder must contain:)",
+            "$1\n$2",
+            RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"(?<!\n)([✔✓])",
+            "\n$1",
+            RegexOptions.CultureInvariant);
+
+        normalized = Regex.Replace(
+            normalized,
+            @"\n{3,}",
+            "\n\n",
+            RegexOptions.CultureInvariant);
+
+        return normalized.Trim();
+    }
+
+    private static bool IsSectionHeading(string value)
+        => value is "Description"
+            or "Acceptance Criteria"
+            or "Project-Specific Scope"
+            or "Out of Scope"
+            or "Success Metrics"
+            || value.StartsWith("Shared Criteria", StringComparison.Ordinal)
+            || value == "Definition of Done";
+
+    private static void FlushParagraph(StringBuilder html, List<string> paragraph)
+    {
+        if (paragraph.Count == 0)
+        {
+            return;
+        }
+
+        var content = string.Join('\n', paragraph);
+        html.Append("<p>")
+            .Append(FormatInline(content).Replace("\n", "<br />", StringComparison.Ordinal))
+            .Append("</p>");
+        paragraph.Clear();
+    }
+
+    private static void FlushList(StringBuilder html, List<string> listItems)
+    {
+        if (listItems.Count == 0)
+        {
+            return;
+        }
+
+        html.Append("<ul>");
+        foreach (var item in listItems)
+        {
+            html.Append("<li>")
+                .Append(FormatInline(item))
+                .Append("</li>");
+        }
+
+        html.Append("</ul>");
+        listItems.Clear();
+    }
+
+    private static string FormatInline(string value)
+    {
+        var imagePlaceholders = new Dictionary<string, string>();
+        var imageIndex = 0;
+
+        var normalized = Regex.Replace(
+            value,
+            @"<img\b[^>]*src\s*=\s*[""'](?<src>https?:\/\/[^""']+)[""'][^>]*?(?:alt\s*=\s*[""'](?<alt>[^""']*)[""'])?[^>]*\/?>",
+            match =>
+            {
+                var src = match.Groups["src"].Value;
+                if (!Uri.TryCreate(src, UriKind.Absolute, out var uri)
+                    || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+                {
+                    return string.Empty;
+                }
+
+                var effectiveSrc = GetRenderableImageUrl(uri);
+                var alt = match.Groups["alt"].Success ? WebUtility.HtmlEncode(match.Groups["alt"].Value) : "image";
+                var placeholder = $"__NEXUS_IMG_{imageIndex++}__";
+                imagePlaceholders[placeholder] = $"<img src=\"{WebUtility.HtmlEncode(effectiveSrc)}\" alt=\"{alt}\" loading=\"lazy\" class=\"task-markdown-image\" />";
+                return placeholder;
+            },
+            RegexOptions.IgnoreCase);
+
+        var encoded = WebUtility.HtmlEncode(normalized);
+        encoded = Regex.Replace(encoded, @"\[(.+?)\]\((https?:\/\/[^\s)]+)\)", "<a href=\"$2\" target=\"_blank\" rel=\"noopener noreferrer\">$1</a>");
+        encoded = Regex.Replace(encoded, @"\*\*(.+?)\*\*", "<strong>$1</strong>");
+        encoded = Regex.Replace(encoded, @"`([^`]+)`", "<code>$1</code>");
+        encoded = Regex.Replace(encoded, @"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)", "<em>$1</em>");
+
+        foreach (var placeholder in imagePlaceholders)
+        {
+            encoded = encoded.Replace(placeholder.Key, placeholder.Value, StringComparison.Ordinal);
+        }
+
+        return encoded;
+    }
+
+    private static string GetRenderableImageUrl(Uri uri)
+    {
+        if (string.Equals(uri.Host, "github.com", StringComparison.OrdinalIgnoreCase)
+            && uri.AbsolutePath.StartsWith("/user-attachments/assets/", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"/media/github-attachment?url={Uri.EscapeDataString(uri.ToString())}";
+        }
+
+        return uri.ToString();
+    }
+
+    private static TaskStatusEnum ParseStatus(string value)
+        => Enum.TryParse<TaskStatusEnum>(value, out var status) ? status : TaskStatusEnum.Open;
+
+    private string GetStatusLabel(UnifiedTask task)
+    {
+        if (task.ExternalRef is { } r
+            && ConnectorPluginCatalog.Get(r.ServiceType)?.MapsDoneStatusToClosedLabel == true
+            && task.Status == TaskStatusEnum.Done)
+        {
+            return "Closed";
+        }
+
+        return GetStatusLabel(task.Status);
+    }
+
+    private static string GetStatusLabel(TaskStatusEnum status) => status switch
+    {
+        TaskStatusEnum.Open => "Planned",
+        TaskStatusEnum.InProgress => "In progress",
+        TaskStatusEnum.Done => "Done",
+        TaskStatusEnum.Blocked => "Blocked",
+        TaskStatusEnum.Cancelled => "Cancelled",
+        _ => "Unknown"
+    };
+
+    private static string GetStatusClass(TaskStatusEnum status) => status switch
+    {
+        TaskStatusEnum.Open => "status-open",
+        TaskStatusEnum.InProgress => "status-progress",
+        TaskStatusEnum.Done => "status-done",
+        TaskStatusEnum.Blocked => "status-muted",
+        TaskStatusEnum.Cancelled => "status-muted",
+        _ => "status-muted"
+    };
+
+    private static string GetPriorityLabel(TaskPriorityEnum? priority)
+        => priority?.ToString() ?? "None";
+
+    private static string GetPriorityClass(TaskPriorityEnum? priority) => priority switch
+    {
+        TaskPriorityEnum.Low => "priority-pill priority-low",
+        TaskPriorityEnum.Medium => "priority-pill priority-medium",
+        TaskPriorityEnum.High => "priority-pill priority-high",
+        TaskPriorityEnum.Critical => "priority-pill priority-critical",
+        _ => "priority-pill priority-none"
+    };
+
+    private static string FormatDue(DateTimeOffset? value)
+        => value?.ToLocalTime().ToString("ddd, MMM d · h:mm tt") ?? "No due date";
+
+}

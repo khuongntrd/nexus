@@ -1,0 +1,16 @@
+name-template: 'v$RESOLVED_VERSION'
+tag-template: 'v$RESOLVED_VERSION'
+change-template: '- $TITLE #$NUMBER by @$AUTHOR'
+categories:
+  - title: '🚀 Features'
+    labels:
+      - 'feature'
+  - title: '🐛 Fixes'
+    labels:
+      - 'bug'
+  - title: '🧰 Chores'
+    labels:
+      - 'chore'
+template: |
+  ## What's Changed
+  $CHANGES

@@ -1,0 +1,9 @@
+﻿global using Microsoft.AspNetCore.Components;
+global using Microsoft.FluentUI.AspNetCore.Components;
+global using Nexus.Application.Connectors;
+global using Nexus.Application.Repositories;
+global using Nexus.Connectors.Core.Abstractions;
+global using Nexus.Connectors.Core.Exceptions;
+global using Nexus.Core.Entities;
+global using Nexus.Core.Enums;
+global using Nexus.Core.ValueObjects;

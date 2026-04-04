@@ -1,0 +1,26 @@
+@using Nexus.Connectors.Jira.Options
+
+<div class="connection-settings-form">
+    <FluentTextField Label="Display Name" @bind-Value="Settings.DisplayName" />
+    <FluentTextField Label="Base URL" @bind-Value="Settings.BaseUrl" />
+    <FluentTextField Label="Web URL" @bind-Value="Settings.WebUrl" />
+    <FluentTextField Label="Email" @bind-Value="Settings.Email" />
+    <FluentTextField Label="API Token" TextFieldType="@TextFieldType.Password" @bind-Value="Settings.ApiToken" />
+    <FluentTextArea Label="Project Keys (one per line)" Value="@Settings.ProjectKeysText" ValueChanged="OnProjectKeysTextChanged" Rows="4" />
+    <FluentTextField Label="JQL" @bind-Value="Settings.Jql" />
+    <FluentTextField Label="Default Issue Type" @bind-Value="Settings.DefaultIssueType" />
+</div>
+
+@code {
+    [Parameter] public JiraOptions Settings { get; set; } = default!;
+
+    private async Task OnProjectKeysTextChanged(string value)
+    {
+        Settings.ProjectKeysText = value;
+        Settings.ProjectKeys = value?.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                             .Select(s => s.Trim())
+                             .Where(s => !string.IsNullOrWhiteSpace(s))
+                             .ToArray() ?? Array.Empty<string>();
+        await Task.CompletedTask;
+    }
+}

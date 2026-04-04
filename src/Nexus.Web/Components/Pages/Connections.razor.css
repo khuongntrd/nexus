@@ -1,0 +1,56 @@
+.connections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.connection-item {
+    border: 1px solid var(--neutral-stroke-rest);
+    border-radius: var(--border-radius-medium);
+    padding: 1rem;
+    background-color: var(--neutral-fill-rest);
+    box-shadow: var(--shadow-elevation-2);
+}
+
+.connection-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.connection-header h4 {
+    margin: 0;
+}
+
+.connection-type {
+    font-size: 0.875rem;
+    color: var(--neutral-foreground-hint);
+}
+
+.connection-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.connection-status {
+    display: flex;
+    gap: 1rem;
+    font-size: 0.875rem;
+}
+
+.status-enabled {
+    color: var(--accent-foreground-rest);
+}
+
+.status-disabled {
+    color: var(--neutral-foreground-hint);
+}
+
+.status-ready {
+    color: var(--success-foreground-rest);
+}
+
+.status-not-ready {
+    color: var(--error-foreground-rest);
+}

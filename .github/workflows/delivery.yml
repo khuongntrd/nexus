@@ -1,0 +1,36 @@
+name: Release Delivery
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  release-ghcr:
+    name: Publish Docker Image to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish container image via dotnet
+        env:
+          SEM_VER: ${{ github.event.release.tag_name }}
+        run: |
+          VERSION=${SEM_VER#v}
+          dotnet publish src/Nexus.Web/Nexus.Web.csproj --os linux --arch x64 -p:PublishProfile=DefaultContainer -p:ContainerImageTags=$VERSION -p:Version=$VERSION -c Release

@@ -1,0 +1,31 @@
+name: Pull Request CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+env:
+  DOTNET_VERSION: "10.0.x"
+
+jobs:
+  ci:
+    name: Build and Test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore Nexus.slnx
+
+      - name: Build
+        run: dotnet build Nexus.slnx --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test Nexus.slnx --configuration Release --no-build

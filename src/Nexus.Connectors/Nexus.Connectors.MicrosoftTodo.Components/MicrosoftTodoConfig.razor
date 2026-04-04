@@ -1,0 +1,19 @@
+@using Nexus.Connectors.MicrosoftTodo.Options
+
+<div class="connection-settings-form">
+    <FluentTextField Label="Display Name" 
+                     @bind-Value="Settings.DisplayName" />
+    <FluentTextField Label="Client ID" 
+                     @bind-Value="Settings.ClientId" />
+    <FluentTextField Label="Tenant ID" 
+                     @bind-Value="Settings.TenantId" />
+    <FluentTextField Label="Client Secret" 
+                     TextFieldType="@TextFieldType.Password"
+                     @bind-Value="Settings.ClientSecret" />
+    <FluentTextField Label="Redirect URI" 
+                     @bind-Value="Settings.RedirectUri" />
+</div>
+
+@code {
+    [Parameter] public MicrosoftTodoOptions Settings { get; set; } = default!;
+}

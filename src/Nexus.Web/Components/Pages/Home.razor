@@ -1,0 +1,44 @@
+﻿@page "/"
+
+<PageTitle>Dashboard - Nexus</PageTitle>
+
+<FluentGrid Spacing="3" Justify="@JustifyContent.FlexStart" AdaptiveRendering="true">
+    <FluentGridItem xs="12">
+        <DashboardHeroWidget
+            DueTodayCount="@DueTodayCount"
+            ActiveWorkCount="@ActiveWorkCount"
+            GitHubPullRequestCount="@GitHubPullRequestCount"
+            ConnectedIntegrationsCount="@ConnectedIntegrationsCount" />
+    </FluentGridItem>
+
+    <FluentGridItem xs="12" md="6">
+        <FocusWidget
+            OverdueCount="@OverdueCount"
+            DueTodayCount="@DueTodayCount"
+            BlockedCount="@BlockedCount"
+            DoneThisWeekCount="@DoneThisWeekCount"
+            Tasks="@TodayFocusTasks" />
+    </FluentGridItem>
+
+    <FluentGridItem xs="12" md="6">
+        <GitHubPrWidget Tasks="@GitHubPullRequests" />
+    </FluentGridItem>
+
+    <FluentGridItem xs="12" md="6">
+        <SprintWidget
+            CompletionPercent="@SprintCompletionPercent"
+            OpenCount="@SprintOpenCount"
+            DoneCount="@SprintDoneCount"
+            BlockedCount="@BlockedCount"
+            StatusClass="@SprintStatusClass"
+            StatusLabel="@SprintStatusLabel"
+            Narrative="@SprintNarrative" />
+    </FluentGridItem>
+
+    <FluentGridItem xs="12" md="6">
+        <SyncHealthWidget
+            IsHealthy="@(ConnectedIntegrationsCount > 0)"
+            Items="@ConnectorSummaries" />
+    </FluentGridItem>
+</FluentGrid>
+

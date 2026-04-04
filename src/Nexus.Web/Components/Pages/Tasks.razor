@@ -1,0 +1,359 @@
+@page "/tasks"
+@using Nexus.Application.Connectors
+@using Nexus.Connectors.Core.Abstractions
+@using Nexus.Core.Entities
+@using Nexus.Core.Enums
+@using Nexus.Application.Repositories
+@inject ITaskRepository TaskRepository
+@inject IIntegrationRepository IntegrationRepository
+@inject IConnectorPluginCatalog ConnectorPluginCatalog
+@inject IConnectorRegistry ConnectorRegistry
+@using TaskStatusEnum = Nexus.Core.Enums.TaskStatus
+@using TaskPriorityEnum = Nexus.Core.Enums.TaskPriority
+
+<PageTitle>Tasks - Nexus</PageTitle>
+
+<FluentGrid Spacing="@Spacing" AdaptiveRendering="true">
+    <FluentGridItem xs="12">
+        <FluentCard class="surface-card task-overview-card">
+            <div class="surface-card-header task-overview-header">
+                <div>
+                    <h2>Tasks</h2>
+                </div>
+                <div class="task-overview-summary">
+                    <p class="muted">@SyncSummary</p>
+                    <span class="status-pill @(GetSyncSummaryClass())">@SyncSummaryLabel</span>
+                </div>
+            </div>
+
+            <div class="task-stat-grid">
+                <article class="task-stat-card">
+                    <p class="eyebrow">Open</p>
+                    <p class="metric task-stat-value">@PlannedCount</p>
+                </article>
+                <article class="task-stat-card task-stat-card-emphasis">
+                    <p class="eyebrow">Active</p>
+                    <p class="metric task-stat-value">@TodoCount</p>
+                </article>
+                <article class="task-stat-card">
+                    <p class="eyebrow">Done</p>
+                    <p class="metric task-stat-value">@DoneCount</p>
+                </article>
+                <article class="task-stat-card">
+                    <p class="eyebrow">Sources</p>
+                    <p class="metric task-stat-value">@ConnectedSourceCount</p>
+                </article>
+            </div>
+
+            <div class="task-toolbar">
+                <div class="task-tabs" role="tablist" aria-label="Task filters">
+                    <FluentButton Appearance="@(ActiveTab == TaskFilterTab.Planned ? Appearance.Accent : Appearance.Outline)" @onclick="() => SetTab(TaskFilterTab.Planned)">
+                        Planned (@PlannedCount)
+                    </FluentButton>
+                    <FluentButton Appearance="@(ActiveTab == TaskFilterTab.Todo ? Appearance.Accent : Appearance.Outline)" @onclick="() => SetTab(TaskFilterTab.Todo)">
+                        Active (@TodoCount)
+                    </FluentButton>
+                    <FluentButton Appearance="@(ActiveTab == TaskFilterTab.Done ? Appearance.Accent : Appearance.Outline)" @onclick="() => SetTab(TaskFilterTab.Done)">
+                        Done (@DoneCount)
+                    </FluentButton>
+                </div>
+
+                <div class="task-toolbar-search">
+                    <FluentTextField @bind-Value="SearchText" Placeholder="Search title, repo, or description" style="width: 100%;" />
+                </div>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+
+    <FluentGridItem xs="12">
+        <FluentCard class="surface-card">
+            <div class="task-list-head">
+                <div>
+                    <h3>@ActiveTabLabel</h3>
+                    <p class="muted">@FilteredTasks.Count item(s) match the current filter.</p>
+                </div>
+                @if (FilteredTasks.Count > 0)
+                {
+                    <p class="muted task-page-summary">Page @CurrentPage of @TotalPages</p>
+                }
+            </div>
+
+            @if (_loading)
+            {
+                <p class="muted">Loading tasks...</p>
+            }
+            else if (FilteredTasks.Count == 0)
+            {
+                <div class="empty-state">
+                    <p class="eyebrow">Nothing here yet</p>
+                    <h3>No tasks in @ActiveTabLabel</h3>
+                    <p class="muted">Try a different tab or clear the search box to broaden the result set.</p>
+                </div>
+            }
+            else
+            {
+                @foreach (var task in PagedTasks)
+                {
+                    <a class="task-item-link" href="@($"/tasks/{task.Id}")">
+                        <article class="task-item">
+                            <div class="task-item-body">
+                                <div class="task-item-topline">
+                                    <span class="status-pill @GetStatusClass(task.Status)">@GetStatusLabel(task)</span>
+                                    <span class="connector-badge">@GetConnectorLabel(task)</span>
+                                    @if (TryGetAccentBadge(task, out var accentBadge))
+                                    {
+                                        <span class="connector-badge connector-badge-subtle">@accentBadge</span>
+                                    }
+                                    @if (task.Priority is not null)
+                                    {
+                                        <span class="@GetPriorityClass(task.Priority)">@GetPriorityLabel(task.Priority)</span>
+                                    }
+                                    @if (IsOverdue(task))
+                                    {
+                                        <span class="connector-badge connector-badge-alert">Overdue</span>
+                                    }
+                                </div>
+
+                                <p class="task-title">@task.Title</p>
+                                @if (!string.IsNullOrWhiteSpace(task.Description))
+                                {
+                                    <p class="task-description">@ToPreview(task.Description)</p>
+                                }
+
+                                <div class="task-meta">
+                                    @if (task.DueAt is not null)
+                                    {
+                                        <span class="task-meta-item">Due @FormatDate(task.DueAt)</span>
+                                    }
+                                    <span class="task-meta-item">Updated @task.UpdatedAt.ToLocalTime().ToString("g")</span>
+                                </div>
+                            </div>
+
+                        </article>
+                    </a>
+                }
+
+                @if (FilteredTasks.Count > PageSize)
+                {
+                    <div class="task-pagination">
+                        <FluentButton Appearance="@Appearance.Outline" Disabled="@(CurrentPage <= 1)" @onclick="PrevPage">Previous</FluentButton>
+                        <span class="muted">Page @CurrentPage / @TotalPages</span>
+                        <FluentButton Appearance="@Appearance.Outline" Disabled="@(CurrentPage >= TotalPages)" @onclick="NextPage">Next</FluentButton>
+                    </div>
+                }
+            }
+        </FluentCard>
+    </FluentGridItem>
+</FluentGrid>
+
+@code {
+    private enum TaskFilterTab
+    {
+        Planned,
+        Todo,
+        Done
+    }
+
+    private List<UnifiedTask> _tasks = [];
+    private bool _loading = true;
+    private int Spacing = 3;
+    private const int PageSize = 20;
+    private int CurrentPage = 1;
+    private TaskFilterTab ActiveTab = TaskFilterTab.Todo;
+    private DateTimeOffset? _lastSyncAt;
+    private string _searchText = string.Empty;
+
+    private string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            var normalized = value?.Trim() ?? string.Empty;
+            if (string.Equals(_searchText, normalized, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _searchText = normalized;
+            CurrentPage = 1;
+        }
+    }
+
+    private IReadOnlyList<UnifiedTask> FilteredTasks => _tasks
+        .Where(t => ActiveTab switch
+        {
+            TaskFilterTab.Planned => t.Status == TaskStatusEnum.Open,
+            TaskFilterTab.Todo => t.Status is TaskStatusEnum.InProgress or TaskStatusEnum.Blocked or TaskStatusEnum.Cancelled,
+            TaskFilterTab.Done => t.Status == TaskStatusEnum.Done,
+            _ => false
+        })
+        .Where(MatchesSearch)
+        .ToList();
+
+    private int PlannedCount => _tasks.Count(t => t.Status == TaskStatusEnum.Open);
+    private int TodoCount => _tasks.Count(t => t.Status is TaskStatusEnum.InProgress or TaskStatusEnum.Blocked or TaskStatusEnum.Cancelled);
+    private int DoneCount => _tasks.Count(t => t.Status == TaskStatusEnum.Done);
+    private int ConnectedSourceCount => _tasks
+        .Select(t => t.ExternalRef?.ServiceType)
+        .Where(t => t is not null)
+        .Distinct()
+        .Count();
+    private int TotalPages => Math.Max(1, (int)Math.Ceiling(FilteredTasks.Count / (double)PageSize));
+    private IReadOnlyList<UnifiedTask> PagedTasks => FilteredTasks
+        .Skip((CurrentPage - 1) * PageSize)
+        .Take(PageSize)
+        .ToList();
+
+    private string SyncSummary => _lastSyncAt is null
+        ? "Auto-sync on page load. No sync recorded yet."
+        : $"Auto-sync on page load. Last sync: {_lastSyncAt.Value.ToLocalTime():g}";
+
+    private string SyncSummaryLabel => _lastSyncAt is null
+        ? "Awaiting first sync"
+        : "Sync active";
+
+    private string ActiveTabLabel => ActiveTab switch
+    {
+        TaskFilterTab.Planned => "Planned",
+        TaskFilterTab.Todo => "Active",
+        TaskFilterTab.Done => "Done",
+        _ => "current tab"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        var integrations = await IntegrationRepository.GetAllAsync();
+        _lastSyncAt = integrations
+            .Where(i => i.LastSyncAt is not null)
+            .OrderByDescending(i => i.LastSyncAt)
+            .Select(i => i.LastSyncAt)
+            .FirstOrDefault();
+
+        _tasks = (await TaskRepository.GetAllAsync())
+            .OrderByDescending(t => t.CreatedAt)
+            .ToList();
+
+        _loading = false;
+    }
+
+    private void SetTab(TaskFilterTab tab)
+    {
+        ActiveTab = tab;
+        CurrentPage = 1;
+    }
+
+    private void PrevPage()
+    {
+        CurrentPage = Math.Max(1, CurrentPage - 1);
+    }
+
+    private void NextPage()
+    {
+        CurrentPage = Math.Min(TotalPages, CurrentPage + 1);
+    }
+
+    private string GetConnectorLabel(UnifiedTask task)
+    {
+        if (task.ExternalRef is not { } r)
+        {
+            return "Local";
+        }
+
+        return ConnectorPluginCatalog.Get(r.ServiceType)?.DisplayName ?? "Local";
+    }
+
+    private bool TryGetAccentBadge(UnifiedTask task, out string badge)
+    {
+        badge = string.Empty;
+        if (task.ExternalRef is not { } externalRef)
+        {
+            return false;
+        }
+
+        var accent = ConnectorRegistry.Get(externalRef.ServiceType)?.GetListAccentBadge(externalRef);
+        if (string.IsNullOrWhiteSpace(accent))
+        {
+            return false;
+        }
+
+        badge = accent;
+        return true;
+    }
+
+    private bool MatchesSearch(UnifiedTask task)
+    {
+        if (string.IsNullOrWhiteSpace(_searchText))
+        {
+            return true;
+        }
+
+        return task.Title.Contains(_searchText, StringComparison.OrdinalIgnoreCase)
+            || (task.Description?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (task.ExternalRef?.ProjectKey?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (task.ExternalRef?.ExternalId?.Contains(_searchText, StringComparison.OrdinalIgnoreCase) ?? false);
+    }
+
+    private string GetStatusLabel(UnifiedTask task)
+    {
+        if (task.ExternalRef is { } r
+            && ConnectorPluginCatalog.Get(r.ServiceType)?.MapsDoneStatusToClosedLabel == true
+            && task.Status == TaskStatusEnum.Done)
+        {
+            return "Closed";
+        }
+
+        return GetStatusLabel(task.Status);
+    }
+
+    private static string GetStatusLabel(TaskStatusEnum status) => status switch
+    {
+        TaskStatusEnum.Open => "Planned",
+        TaskStatusEnum.InProgress => "In progress",
+        TaskStatusEnum.Done => "Done",
+        TaskStatusEnum.Blocked => "Blocked",
+        TaskStatusEnum.Cancelled => "Cancelled",
+        _ => "Unknown"
+    };
+
+    private static string GetStatusClass(TaskStatusEnum status) => status switch
+    {
+        TaskStatusEnum.Open => "status-open",
+        TaskStatusEnum.InProgress => "status-progress",
+        TaskStatusEnum.Done => "status-done",
+        TaskStatusEnum.Blocked => "status-muted",
+        TaskStatusEnum.Cancelled => "status-muted",
+        _ => "status-muted"
+    };
+
+    private static string ToPreview(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        var normalized = value.Replace("\r", " ").Replace("\n", " ").Trim();
+        return normalized.Length <= 180 ? normalized : $"{normalized[..177]}...";
+    }
+
+    private static string FormatDate(DateTimeOffset? value)
+        => value?.ToLocalTime().ToString("ddd, MMM d · h:mm tt") ?? "No due date";
+
+    private static bool IsOverdue(UnifiedTask task)
+        => task.DueAt is not null && task.Status != TaskStatusEnum.Done && task.DueAt.Value < DateTimeOffset.UtcNow;
+
+    private static string GetPriorityLabel(TaskPriorityEnum? priority)
+        => priority?.ToString() ?? string.Empty;
+
+    private static string GetPriorityClass(TaskPriorityEnum? priority) => priority switch
+    {
+        TaskPriorityEnum.Low => "priority-pill priority-low",
+        TaskPriorityEnum.Medium => "priority-pill priority-medium",
+        TaskPriorityEnum.High => "priority-pill priority-high",
+        TaskPriorityEnum.Critical => "priority-pill priority-critical",
+        _ => "priority-pill priority-none"
+    };
+
+    private string GetSyncSummaryClass()
+        => _lastSyncAt is null ? "status-open" : "status-done";
+}

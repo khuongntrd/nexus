@@ -1,0 +1,78 @@
+@using Nexus.Core.Entities
+@using TaskStatusEnum = Nexus.Core.Enums.TaskStatus
+
+<FluentCard class="surface-card dashboard-widget-card">
+    <div class="surface-card-header">
+        <div>
+            <h3>Today</h3>
+        </div>
+        <span class="status-pill @(OverdueCount > 0 ? "status-open" : "status-done")">
+            @(OverdueCount > 0 ? $"{OverdueCount} overdue" : "On track")
+        </span>
+    </div>
+
+    <div class="dashboard-widget-list">
+        <div class="dashboard-widget-row">
+            <span class="task-detail-meta-label">Due today</span>
+            <strong>@DueTodayCount</strong>
+        </div>
+        <div class="dashboard-widget-row">
+            <span class="task-detail-meta-label">Blocked</span>
+            <strong>@BlockedCount</strong>
+        </div>
+        <div class="dashboard-widget-row">
+            <span class="task-detail-meta-label">Done this week</span>
+            <strong>@DoneThisWeekCount</strong>
+        </div>
+    </div>
+
+    @if (Tasks.Count == 0)
+    {
+        <p class="muted">No urgent work right now.</p>
+    }
+    else
+    {
+        <div class="dashboard-mini-list">
+            @foreach (var task in Tasks)
+            {
+                <a class="task-item-link" href="@($"/tasks/{task.Id}")">
+                    <article class="dashboard-mini-item">
+                        <div>
+                            <p class="task-title">@task.Title</p>
+                            <p class="muted">@(task.DueAt is null ? "No due date" : $"Due {task.DueAt.Value.ToLocalTime():ddd, MMM d · h:mm tt}")</p>
+                        </div>
+                        <span class="status-pill @GetStatusClass(task.Status)">@GetStatusLabel(task.Status)</span>
+                    </article>
+                </a>
+            }
+        </div>
+    }
+</FluentCard>
+
+@code {
+    [Parameter] public int OverdueCount { get; set; }
+    [Parameter] public int DueTodayCount { get; set; }
+    [Parameter] public int BlockedCount { get; set; }
+    [Parameter] public int DoneThisWeekCount { get; set; }
+    [Parameter] public IReadOnlyList<UnifiedTask> Tasks { get; set; } = [];
+
+    private static string GetStatusClass(TaskStatusEnum status) => status switch
+    {
+        TaskStatusEnum.Open => "status-open",
+        TaskStatusEnum.InProgress => "status-progress",
+        TaskStatusEnum.Done => "status-done",
+        TaskStatusEnum.Blocked => "status-open",
+        TaskStatusEnum.Cancelled => "status-muted",
+        _ => "status-muted"
+    };
+
+    private static string GetStatusLabel(TaskStatusEnum status) => status switch
+    {
+        TaskStatusEnum.Open => "Planned",
+        TaskStatusEnum.InProgress => "In progress",
+        TaskStatusEnum.Done => "Done",
+        TaskStatusEnum.Blocked => "Blocked",
+        TaskStatusEnum.Cancelled => "Cancelled",
+        _ => "Unknown"
+    };
+}

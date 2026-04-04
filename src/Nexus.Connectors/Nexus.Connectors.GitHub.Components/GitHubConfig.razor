@@ -1,0 +1,97 @@
+@using Microsoft.AspNetCore.Components
+@using Nexus.Core.Enums
+@using Nexus.Connectors.GitHub.Options
+
+<div class="connection-settings-form">
+    <FluentTextField Label="Display Name"
+                     @bind-Value="Settings.DisplayName" />
+
+    <div class="connection-settings-section connection-auth-mode-group">
+        <FluentRadioGroup Name="@($"github-authMode-{Id}")"
+                          Label="Authentication Mode"
+                          Value="@_authModeValue"
+                          ValueChanged="_authModeRadioValueChanged">
+            <FluentRadio Value="@nameof(AuthMode.PersonalAccessToken)">Personal Access Token (PAT)</FluentRadio>
+            <FluentRadio Value="@nameof(AuthMode.OAuthPkce)">OAuth 2.0</FluentRadio>
+        </FluentRadioGroup>
+    </div>
+
+    @if (Settings.AuthMode == AuthMode.PersonalAccessToken)
+    {
+        <FluentTextField @key="@($"pat-{Id}")"
+                         Label="Personal Access Token"
+                         TextFieldType="@TextFieldType.Password"
+                         @bind-Value="Settings.PersonalAccessToken" />
+    }
+    else
+    {
+        <FluentTextField @key="@($"oauth-id-{Id}")"
+                         Label="OAuth Client ID"
+                         @bind-Value="Settings.OAuthClientId" />
+        <FluentTextField @key="@($"oauth-secret-{Id}")"
+                         Label="OAuth Client Secret"
+                         TextFieldType="@TextFieldType.Password"
+                         @bind-Value="Settings.OAuthClientSecret" />
+        <FluentCard class="connection-settings-note-card">
+            <div class="connection-settings-note-body">
+                <span>After saving, click Connect OAuth to authorize this GitHub connection.</span>
+            </div>
+        </FluentCard>
+    }
+
+    <FluentTextArea Label="Repositories (one per line)"
+                    Value="@Settings.RepositoriesText"
+                    ValueChanged="OnRepositoriesTextChangedInternal"
+                    Rows="5" />
+</div>
+
+@code {
+    [Parameter] public string Id { get; set; } = Guid.NewGuid().ToString();
+    [Parameter] public GitHubOptions Settings { get; set; } = default!;
+
+    /// <summary>
+    /// Raised when auth mode changes so a parent hosting this component via <see cref="DynamicComponent"/> can re-render.
+    /// </summary>
+    [Parameter] public EventCallback AuthModeChanged { get; set; }
+
+    private EventCallback<string?> _authModeRadioValueChanged = default!;
+
+    private string _authModeValue = nameof(AuthMode.PersonalAccessToken);
+
+    protected override void OnInitialized()
+    {
+        _authModeRadioValueChanged = EventCallback.Factory.Create<string?>(this, OnAuthModeRadioValueChangedAsync);
+    }
+
+    protected override void OnParametersSet()
+    {
+        if (Settings is not null)
+        {
+            _authModeValue = Settings.AuthMode.ToString();
+        }
+    }
+
+    private async Task OnRepositoriesTextChangedInternal(string value)
+    {
+        Settings.RepositoriesText = value;
+        await Task.CompletedTask;
+    }
+
+    private async Task OnAuthModeRadioValueChangedAsync(string? value)
+    {
+        if (string.IsNullOrEmpty(value) || !Enum.TryParse<AuthMode>(value, out var mode))
+        {
+            return;
+        }
+
+        if (Settings.AuthMode == mode)
+        {
+            return;
+        }
+
+        Settings.AuthMode = mode;
+        _authModeValue = value;
+        await AuthModeChanged.InvokeAsync();
+        StateHasChanged();
+    }
+}

@@ -1,0 +1,78 @@
+@page "/connections"
+
+<PageTitle>Connectors - Nexus</PageTitle>
+
+<FluentGrid Spacing="3" AdaptiveRendering="true">
+    <FluentGridItem xs="12">
+        <FluentCard class="surface-card settings-hero-card">
+            <div class="surface-card-header">
+                <h2>Connectors</h2>
+                <div class="settings-overview">
+                    <div class="settings-overview-stat">
+                        <span class="task-detail-meta-label">Ready now</span>
+                        <strong>@ReadyCount / @Math.Max(1, ConnectorRegistry.GetAll().Count)</strong>
+                    </div>
+                    <div class="settings-overview-stat">
+                        <span class="task-detail-meta-label">Integrations</span>
+                        <strong>@TotalIntegrationCount</strong>
+                    </div>
+                </div>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+
+    <FluentGridItem xs="12">
+        <FluentCard class="surface-card">
+            <div class="card-header">
+                <h3>Your Connections</h3>
+                <FluentButton Appearance="@Appearance.Accent" @onclick="AddNewConnection">Add Connection</FluentButton>
+            </div>
+            <div class="connections-list">
+                @if (_connectionsList.Count == 0)
+                {
+                    <div class="empty-state">
+                        <p>No connections configured yet. Click "Add Connection" to get started.</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var connection in _connectionsList)
+                    {
+                        <div class="connection-item">
+                            <div class="connection-header">
+                                <h4>@connection.Name</h4>
+                                <span class="connection-type">@connection.ServiceType</span>
+                                <span class="connection-actions">
+                                    <FluentButton Appearance="@Appearance.Accent" Size="Size.Small" 
+                                                  @onclick="() => EditConnection(connection.Id)">
+                                        Edit
+                                    </FluentButton>
+                                    <FluentButton Appearance="@Appearance.Outline" Size="Size.Small" 
+                                                  @onclick="() => ToggleConnection(connection.Id)">
+                                        @(connection.IsEnabled ? "Disable" : "Enable")
+                                    </FluentButton>
+                                    <FluentButton Appearance="@Appearance.Outline" Size="Size.Small" 
+                                                  @onclick="() => SyncNow(connection.Id)">
+                                        Sync Now
+                                    </FluentButton>
+                                    <FluentButton Appearance="@Appearance.Outline" Size="Size.Small" 
+                                                  @onclick="() => DeleteConnection(connection.Id)">
+                                        Delete
+                                    </FluentButton>
+                                </span>
+                            </div>
+                            <div class="connection-status">
+                                <span class="@(connection.IsEnabled ? "status-enabled" : "status-disabled")">
+                                    @(connection.IsEnabled ? "Enabled" : "Disabled")
+                                </span>
+                                <span class="@(connection.IsReady ? "status-ready" : "status-not-ready")">
+                                    @(connection.IsReady ? "Ready" : "Not Ready")
+                                </span>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+</FluentGrid>

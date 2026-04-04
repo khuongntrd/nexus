@@ -1,0 +1,45 @@
+<FluentCard class="surface-card dashboard-widget-card">
+    <div class="surface-card-header">
+        <div>
+            <h3>Current health</h3>
+        </div>
+        <span class="status-pill @StatusClass">@StatusLabel</span>
+    </div>
+
+    <div class="dashboard-progress-block">
+        <div class="dashboard-progress-head">
+            <span class="task-detail-meta-label">Completion</span>
+            <strong>@CompletionPercent%</strong>
+        </div>
+        <div class="dashboard-progress-track" aria-hidden="true">
+            <div class="dashboard-progress-bar" style="@($"width: {CompletionPercent}%;")"></div>
+        </div>
+    </div>
+
+    <div class="dashboard-widget-list">
+        <div class="dashboard-widget-row">
+            <span class="task-detail-meta-label">Open sprint items</span>
+            <strong>@OpenCount</strong>
+        </div>
+        <div class="dashboard-widget-row">
+            <span class="task-detail-meta-label">Completed</span>
+            <strong>@DoneCount</strong>
+        </div>
+        <div class="dashboard-widget-row">
+            <span class="task-detail-meta-label">Blocked</span>
+            <strong>@BlockedCount</strong>
+        </div>
+    </div>
+
+    <p class="muted">@Narrative</p>
+</FluentCard>
+
+@code {
+    [Parameter] public int CompletionPercent { get; set; }
+    [Parameter] public int OpenCount { get; set; }
+    [Parameter] public int DoneCount { get; set; }
+    [Parameter] public int BlockedCount { get; set; }
+    [Parameter] public string StatusClass { get; set; } = "status-muted";
+    [Parameter] public string StatusLabel { get; set; } = "Unknown";
+    [Parameter] public string Narrative { get; set; } = string.Empty;
+}

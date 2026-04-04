@@ -1,0 +1,87 @@
+::deep .body-content {
+  padding: 0 calc(var(--design-unit) * 1px);
+}
+
+::deep .main-layout-navmenu {
+  margin-top: calc(var(--design-unit) * -1px);
+}
+
+::deep .main-layout-navmenu .fluent-nav-item {
+  width: 100%;
+}
+
+@media (max-width: 767.98px) {
+  ::deep .main-layout-navmenu {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.375rem;
+    overflow-x: hidden;
+    padding: calc(var(--design-unit) * 2px) calc(var(--design-unit) * 3px)
+      calc((var(--design-unit) * 2px) + env(safe-area-inset-bottom));
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    z-index: 100;
+    background: var(--neutral-fill-layer-rest);
+    border-top: 1px solid var(--neutral-stroke-divider-rest);
+  }
+
+  ::deep .main-layout-navmenu .fluent-nav-item {
+    min-width: 0;
+    width: 100%;
+    margin: 0;
+  }
+
+  ::deep .main-layout-navmenu .fluent-nav-item .positioning-region {
+    min-height: 3.25rem;
+  }
+
+  ::deep .main-layout-navmenu .fluent-nav-item .content-region {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.2rem;
+    margin-inline-start: 0;
+    padding-inline-start: 0;
+  }
+
+  ::deep .main-layout-navmenu .fluent-nav-item .fluent-nav-icon {
+    min-width: 0;
+  }
+
+  ::deep .main-layout-navmenu .fluent-nav-item .fluent-nav-text {
+    margin-inline-start: 0;
+    width: 100%;
+    text-align: center;
+    font-size: 0.75rem;
+    line-height: 1.1;
+  }
+
+  ::deep .main-layout-navmenu .fluent-nav-item.expander {
+    display: none;
+  }
+
+  /* Move active indicator from left edge to top edge on mobile */
+  ::deep
+    .main-layout-navmenu
+    .fluent-nav-item
+    .active
+    .positioning-region::before {
+    top: 0;
+    left: 0.5rem;
+    right: 0.5rem;
+    width: auto;
+    height: 3px;
+    margin: 0;
+    border-radius: var(--nexus-radius-pill);
+  }
+
+  /* Reserve space for fixed bottom nav so content is never hidden behind it */
+  ::deep .body-content {
+    padding-bottom: calc((var(--design-unit) * 22px) + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+  }
+}

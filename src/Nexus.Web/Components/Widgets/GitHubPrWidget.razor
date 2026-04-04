@@ -1,0 +1,50 @@
+@using Nexus.Core.Entities
+
+<FluentCard class="surface-card dashboard-widget-card">
+    <div class="surface-card-header">
+        <div>
+            <h3>Review queue</h3>
+        </div>
+        <span class="status-pill @(Tasks.Count > 0 ? "status-progress" : "status-muted")">
+            @(Tasks.Count > 0 ? $"{Tasks.Count} in queue" : "No PRs")
+        </span>
+    </div>
+
+    @if (Tasks.Count == 0)
+    {
+        <p class="muted">No open pull requests in the local queue.</p>
+    }
+    else
+    {
+        <div class="dashboard-mini-list">
+            @foreach (var task in Tasks)
+            {
+                <a class="task-item-link review-queue-link" href="@($"/tasks/{task.Id}")">
+                    <article class="dashboard-mini-item review-queue-item">
+                        <div class="review-queue-copy">
+                            <p class="task-title">@task.Title</p>
+                            <div class="task-item-topline">
+                                <span class="connector-badge connector-badge-subtle">@GetRepoLabel(task)</span>
+                                @if (IsStale(task))
+                                {
+                                    <span class="connector-badge connector-badge-alert">Stale</span>
+                                }
+                            </div>
+                        </div>
+                        <span class="muted review-queue-date">@task.UpdatedAt.ToLocalTime().ToString("MMM d")</span>
+                    </article>
+                </a>
+            }
+        </div>
+    }
+</FluentCard>
+
+@code {
+    [Parameter] public IReadOnlyList<UnifiedTask> Tasks { get; set; } = [];
+
+    private static bool IsStale(UnifiedTask task)
+        => task.UpdatedAt < DateTimeOffset.UtcNow.AddDays(-3);
+
+    private static string GetRepoLabel(UnifiedTask task)
+        => string.IsNullOrWhiteSpace(task.ExternalRef?.ProjectKey) ? "GitHub" : task.ExternalRef.ProjectKey;
+}

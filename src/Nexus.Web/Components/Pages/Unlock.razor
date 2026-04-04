@@ -1,0 +1,23 @@
+@page "/login"
+@page "/unlock"
+
+<PageTitle>Sign In - Nexus</PageTitle>
+
+<FluentGrid Spacing="3" AdaptiveRendering="true">
+    <FluentGridItem xs="12">
+        <FluentCard class="surface-card">
+            <h2>Sign in to Nexus</h2>
+
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <p class="connector-status connector-status-disconnected">@Error</p>
+            }
+
+            <p class="muted">Use your personal Microsoft account to access the app.</p>
+
+            <div class="row-actions">
+                <a class="unlock-submit-button auth-signin-link" href="@SignInUrl">Sign in with Microsoft</a>
+            </div>
+        </FluentCard>
+    </FluentGridItem>
+</FluentGrid>

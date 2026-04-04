@@ -1,0 +1,95 @@
+.settings-connections-list {
+    display: grid;
+    gap: .75rem;
+}
+
+.settings-connections-empty {
+    padding: .8rem .85rem;
+    border: 1px dashed var(--neutral-stroke-rest);
+    border-radius: var(--nexus-radius);
+    background: color-mix(in srgb, var(--nexus-surface-elevated-strong) 70%, transparent);
+}
+
+.settings-connections-empty p {
+    margin: 0;
+    color: var(--neutral-foreground-hint);
+}
+
+.settings-connections-rows {
+    display: grid;
+    gap: .75rem;
+}
+
+.settings-connection-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .9rem;
+    padding: .8rem .85rem;
+    border-radius: var(--nexus-radius);
+    border: 1px solid color-mix(in srgb, var(--neutral-stroke-divider-rest) 72%, transparent);
+    background: var(--nexus-surface-elevated-strong);
+}
+
+.settings-connection-main {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: .75rem;
+}
+
+.settings-connection-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: var(--nexus-radius-round);
+    border: 1px solid color-mix(in srgb, var(--accent-fill-rest) 35%, transparent);
+    background: color-mix(in srgb, var(--accent-fill-rest) 16%, transparent);
+    color: var(--accent-fill-rest);
+    font-weight: 700;
+    flex: 0 0 auto;
+}
+
+.settings-connection-copy {
+    min-width: 0;
+    display: grid;
+    gap: .2rem;
+}
+
+.settings-connection-copy h4 {
+    margin: 0;
+    line-height: 1.2;
+}
+
+.settings-connection-type {
+    margin: 0;
+    color: var(--neutral-foreground-hint);
+    font-size: .82rem;
+}
+
+.settings-connection-status {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .35rem;
+    margin-top: .2rem;
+}
+
+.settings-connection-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .4rem;
+    justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+    .settings-connection-row {
+        display: grid;
+        gap: .8rem;
+    }
+
+    .settings-connection-actions {
+        justify-content: flex-start;
+    }
+}

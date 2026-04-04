@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Nexus.Core/Nexus.Core.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.Core/Nexus.Connectors.Core.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.GitHub/Nexus.Connectors.GitHub.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.Jira/Nexus.Connectors.Jira.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.MicrosoftTodo/Nexus.Connectors.MicrosoftTodo.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.GitHub.Components/Nexus.Connectors.GitHub.Components.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.Jira.Components/Nexus.Connectors.Jira.Components.csproj" />
+    <Project Path="src/Nexus.Connectors/Nexus.Connectors.MicrosoftTodo.Components/Nexus.Connectors.MicrosoftTodo.Components.csproj" />
+    <Project Path="src/Nexus.Application/Nexus.Application.csproj" />
+    <Project Path="src/Nexus.Infrastructure/Nexus.Infrastructure.csproj" />
+    <Project Path="src/Nexus.Web/Nexus.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Nexus.Application.Tests/Nexus.Application.Tests.csproj" />
+    <Project Path="tests/Nexus.Infrastructure.Tests/Nexus.Infrastructure.Tests.csproj" />
+  </Folder>
+</Solution>

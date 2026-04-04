@@ -1,0 +1,31 @@
+<FluentCard class="surface-card dashboard-hero-card">
+    <div>
+        <h2>Daily control</h2>
+    </div>
+
+    <div class="task-stat-grid">
+        <article class="task-stat-card">
+            <p class="eyebrow">Today</p>
+            <p class="metric task-stat-value">@DueTodayCount</p>
+        </article>
+        <article class="task-stat-card task-stat-card-emphasis">
+            <p class="eyebrow">Active</p>
+            <p class="metric task-stat-value">@ActiveWorkCount</p>
+        </article>
+        <article class="task-stat-card">
+            <p class="eyebrow">Reviews</p>
+            <p class="metric task-stat-value">@GitHubPullRequestCount</p>
+        </article>
+        <article class="task-stat-card">
+            <p class="eyebrow">Connected</p>
+            <p class="metric task-stat-value">@ConnectedIntegrationsCount</p>
+        </article>
+    </div>
+</FluentCard>
+
+@code {
+    [Parameter] public int DueTodayCount { get; set; }
+    [Parameter] public int ActiveWorkCount { get; set; }
+    [Parameter] public int GitHubPullRequestCount { get; set; }
+    [Parameter] public int ConnectedIntegrationsCount { get; set; }
+}
